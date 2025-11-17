@@ -112,28 +112,29 @@ Customize appearance using Waybar's GTK CSS support. The module container uses t
 
 **Styling Example:**
 ```css
-#cffi\.niri-window-buttons button {
+#cffi\.niri_window_buttons button {
   padding: 4px 8px;
   border-radius: 4px;
   transition: background 200ms;
 }
 
-#cffi\.niri-window-buttons button.focused {
+#cffi\.niri_window_buttons button.focused {
   background: rgba(255, 255, 255, 0.3);
   border-bottom: 3px solid #81a1c1;
 }
 
-#cffi\.niri-window-buttons button.urgent {
+#cffi\.niri_window_buttons button.urgent {
   background: rgba(191, 97, 106, 0.4);
   border-bottom: 3px solid #bf616a;
 }
 
-#cffi\.niri-window-buttons button.unread {
+#cffi\.niri_window_buttons button.unread {
   color: #ebcb8b;
 }
 ```
 
-### Wishlist/Ideas
+## Wishlist/Ideas
+
 - Expand ignore rules, for example:
 ```
 "ignore": {
@@ -158,7 +159,8 @@ Customize appearance using Waybar's GTK CSS support. The module container uses t
 - Toggle or shrink label to icon
 - Free reaarange instead of actual Niri workspace order
 
-#### Clicking Rules Ideas
+### Clicking Rules Ideas
+
 ```
 Standard click types:
 left-click (already does focus/activate)
