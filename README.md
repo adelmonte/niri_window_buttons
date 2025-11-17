@@ -2,7 +2,7 @@
 
 A Waybar module for displaying and managing traditional window buttons for the Niri compositor.
 
-![Example screenshot](demo.png)
+![screenshot](demo.png)
 
 ## Features
 
