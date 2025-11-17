@@ -7,14 +7,14 @@ A Waybar module for displaying and managing traditional window buttons for the N
 ## Features
 
 - Window buttons with application icons and optional title text
+- Drag and drop window reordering
+- App ID filtering for hidden windows
 - Click handling: activate, maximize, close windows
 - Basic context menu
-- Drag and drop window reordering
 - Dynamic button sizing
 - Workspace filtering (all/current)
 - Multi-monitor support
 - Notification integration with urgency hints
-- App ID filtering for hidden windows
 - Custom CSS styling
 - Shows active window in Niri overview
 
