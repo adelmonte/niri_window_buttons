@@ -203,7 +203,7 @@ impl WindowTracker {
         Self { state: None }
     }
 
-    #[tracing::instrument(level = "TRACE", skip(self))]
+	#[tracing::instrument(level = "TRACE", skip(self))]
     fn process_event(&mut self, event: Event, filter_workspace: bool) -> Option<WindowSnapshot> {
         use TrackerState::*;
 
@@ -216,6 +216,12 @@ impl WindowTracker {
                         active_per_workspace: std::collections::BTreeMap::new(),
                         last_focused_per_workspace: std::collections::BTreeMap::new(),
                     }),
+                    Some(Ready { workspaces, active_per_workspace, last_focused_per_workspace, .. }) => Some(Ready {
+                        windows: windows.iter().map(|w| (w.id, w.clone())).collect(),
+                        workspaces,
+                        active_per_workspace,
+                        last_focused_per_workspace,
+                    }),
                     _ => Some(WindowsOnly(windows)),
                 };
             }
@@ -226,6 +232,12 @@ impl WindowTracker {
                         workspaces: workspaces.into_iter().map(|w| (w.id, w)).collect(),
                         active_per_workspace: std::collections::BTreeMap::new(),
                         last_focused_per_workspace: std::collections::BTreeMap::new(),
+                    }),
+                    Some(Ready { windows, active_per_workspace, last_focused_per_workspace, .. }) => Some(Ready {
+                        windows,
+                        workspaces: workspaces.into_iter().map(|w| (w.id, w)).collect(),
+                        active_per_workspace,
+                        last_focused_per_workspace,
                     }),
                     _ => Some(WorkspacesOnly(workspaces)),
                 };
