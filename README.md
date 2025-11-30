@@ -50,10 +50,10 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
       "middle_click": "close"
     },
     "context_menu": [
-      {"label": "  Maximize Column", "action": "maximize-column"},
-      {"label": "  Maximize to Edges", "action": "maximize-edges"},
+      {"label": "  Maximize Column", "action": "maximize-column"},
+      {"label": "  Maximize to Edges", "action": "maximize-edges"},
       {"label": "󰉩  Toggle Floating", "action": "toggle-floating"},
-      {"label": "  Close Window", "action": "close"}
+      {"label": "  Close Window", "action": "close"}
     ],
     "ignore_rules": [],
     "notifications": {
@@ -110,7 +110,7 @@ Customize which actions appear in the context menu and their order:
 
 ```jsonc
 "context_menu": [
-  {"label": "  Fullscreen", "action": "fullscreen"},n
+  {"label": "  Fullscreen", "action": "fullscreen"},
   {"label": "  Maximize Column", "action": "maximize-column"},
   {"label": "  Maximize to Edges", "action": "maximize-edges"},
   {"label": "󰉩  Toggle Floating", "action": "toggle-floating"},
