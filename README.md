@@ -265,4 +265,5 @@ niri msg --json windows | jq '.[] | {app_id, title, workspace_id}'
 - Minimize/scratchpad support
 - Window grouping by app
 - Multi-select with modifier keys
-- right/middle_click_unfocused etc.
+- Right/middle_click_unfocused etc.
+- Stacked tabs support
