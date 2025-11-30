@@ -12,7 +12,7 @@ A Waybar module for displaying and managing traditional window buttons in the Ni
 - Per-application click behavior and styling via regex title matching
 - Advanced window filtering (by app, title, workspace)
 - Drag and drop window reordering
-- Dynamic button sizing with taskbar width limits
+- Dynamic button sizing with taskbar width limits and scroll overflow.
 - Multi-monitor support
 - Notification integration with urgency hints
 - Custom CSS classes via pattern matching
@@ -235,19 +235,6 @@ Customize appearance using Waybar's GTK CSS. The module container uses class `.n
 }
 ```
 
-## Finding App IDs and Titles
-
-Use niri's IPC to inspect windows:
-
-```bash
-niri msg windows
-```
-
-Or with JSON output for scripting:
-```bash
-niri msg --json windows | jq '.[] | {app_id, title, workspace_id}'
-```
-
 ## Limitations
 
 - **Drag-and-drop reordering** works by sending multiple move-left/move-right commands to niri, as the IPC doesn't expose absolute window positions
@@ -267,3 +254,4 @@ niri msg --json windows | jq '.[] | {app_id, title, workspace_id}'
 - Multi-select with modifier keys
 - Right/middle_click_unfocused etc.
 - Stacked tabs support
+- Custom items/scripts in context menu
