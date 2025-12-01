@@ -334,33 +334,45 @@ impl WindowTracker {
         }
     }
 
-    fn generate_snapshot(
-        &self,
-        windows: &std::collections::BTreeMap<u64, niri_ipc::Window>,
-        workspaces: &std::collections::BTreeMap<u64, Workspace>,
-        active_per_workspace: &std::collections::BTreeMap<u64, u64>,
-        last_focused_per_workspace: &std::collections::BTreeMap<u64, u64>,
-        filter_workspace: bool,
-    ) -> WindowSnapshot {
-        struct WindowWithWorkspace<'a> {
-            window: &'a niri_ipc::Window,
-            workspace: &'a Workspace,
-        }
+	fn generate_snapshot(
+		&self,
+		windows: &std::collections::BTreeMap<u64, niri_ipc::Window>,
+		workspaces: &std::collections::BTreeMap<u64, Workspace>,
+		active_per_workspace: &std::collections::BTreeMap<u64, u64>,
+		last_focused_per_workspace: &std::collections::BTreeMap<u64, u64>,
+		filter_workspace: bool,
+	) -> WindowSnapshot {
+		struct WindowWithWorkspace<'a> {
+		    window: &'a niri_ipc::Window,
+		    workspace: &'a Workspace,
+		}
 
-        let mut window_workspace_pairs: Vec<_> = windows
-            .values()
-            .filter_map(|window| {
-                window.workspace_id.and_then(|ws_id| {
-                    workspaces.get(&ws_id).and_then(|ws| {
-                        if filter_workspace && !ws.is_active {
-                            None
-                        } else {
-                            Some(WindowWithWorkspace { window, workspace: ws })
-                        }
-                    })
-                })
-            })
-            .collect();
+		let active_workspace_per_output: std::collections::HashMap<_, _> = workspaces
+		    .values()
+		    .filter(|ws| ws.is_active)
+		    .filter_map(|ws| ws.output.as_ref().map(|output| (output.clone(), ws.id)))
+		    .collect();
+
+		let mut window_workspace_pairs: Vec<_> = windows
+		    .values()
+		    .filter_map(|window| {
+		        window.workspace_id.and_then(|ws_id| {
+		            workspaces.get(&ws_id).and_then(|ws| {
+		                if filter_workspace {
+		                    let is_active_on_output = ws.output.as_ref()
+		                        .and_then(|output| active_workspace_per_output.get(output))
+		                        .map(|active_ws_id| *active_ws_id == ws.id)
+		                        .unwrap_or(false);
+		                    
+		                    if !is_active_on_output {
+		                        return None;
+		                    }
+		                }
+		                Some(WindowWithWorkspace { window, workspace: ws })
+		            })
+		        })
+		    })
+		    .collect();
 
 		window_workspace_pairs.sort_by(|a, b| {
 			a.workspace.idx
