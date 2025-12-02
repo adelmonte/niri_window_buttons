@@ -58,7 +58,7 @@ impl WindowButton {
         gtk_button.set_relief(ReliefStyle::None);
         gtk_button.add(&layout_box);
 
-        let max_width = state.settings().max_button_width();
+        let max_width = state.settings().max_button_width(None);
         gtk_button.set_size_request(max_width, -1);
 
         if display_titles {

@@ -493,9 +493,10 @@ impl ModuleInstance {
             true
         }) {
             let button_count = (self.buttons.len() + 1) as i32;
-            let min_width = self.state.settings().min_button_width();
-            let max_width = self.state.settings().max_button_width();
-            let total_limit = self.state.settings().max_taskbar_width_for_output(self.current_output.as_deref());
+            let output = self.current_output.as_deref();
+            let min_width = self.state.settings().min_button_width(output);
+            let max_width = self.state.settings().max_button_width(output);
+            let total_limit = self.state.settings().max_taskbar_width_for_output(output);
             
             let initial_width = if max_width * button_count > total_limit {
                 (total_limit / button_count).max(min_width).max(1)
@@ -548,9 +549,10 @@ impl ModuleInstance {
 
         if !self.buttons.is_empty() {
             let button_count = self.buttons.len() as i32;
-            let min_width = self.state.settings().min_button_width();
-            let max_width = self.state.settings().max_button_width();
-            let total_limit = self.state.settings().max_taskbar_width_for_output(self.current_output.as_deref());
+            let output = self.current_output.as_deref();
+            let min_width = self.state.settings().min_button_width(output);
+            let max_width = self.state.settings().max_button_width(output);
+            let total_limit = self.state.settings().max_taskbar_width_for_output(output);
             
             let final_width = if max_width * button_count > total_limit {
                 (total_limit / button_count).max(min_width).max(1)

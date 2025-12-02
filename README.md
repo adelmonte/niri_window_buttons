@@ -112,6 +112,31 @@ Set different taskbar widths for different monitors:
 ```
 The `max_taskbar_width` is used as the default when no output-specific width is configured. Output names can be found using `niri msg outputs`.
 
+#### Per-Output Dimension Configuration
+
+For more granular control, configure all button dimensions per output:
+```jsonc
+{
+  "min_button_width": 150,
+  "max_button_width": 235,
+  "max_taskbar_width": 1200,
+  "dimensions_per_output": {
+    "eDP-1": {
+      "min_button_width": 100,
+      "max_button_width": 150,
+      "max_taskbar_width": 800
+    },
+    "DP-1": {
+      "min_button_width": 200,
+      "max_button_width": 300,
+      "max_taskbar_width": 1600
+    }
+  }
+}
+```
+
+The top-level dimension settings are used as defaults. For each output, you can override any combination of `min_button_width`, `max_button_width`, and `max_taskbar_width`. Settings in `dimensions_per_output` take precedence over both the top-level settings and the legacy `max_taskbar_width_per_output`.
+
 #### Scroll Overflow Behavior
 
 When window buttons exceed `max_taskbar_width`, the taskbar becomes scrollable with arrow buttons. The arrow glyphs can be customized:

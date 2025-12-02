@@ -3,6 +3,16 @@ use itertools::Itertools;
 use regex::Regex;
 use serde::{Deserialize, Deserializer};
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct OutputDimensions {
+    #[serde(default)]
+    pub min_button_width: Option<i32>,
+    #[serde(default)]
+    pub max_button_width: Option<i32>,
+    #[serde(default)]
+    pub max_taskbar_width: Option<i32>,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Settings {
     #[serde(default)]
@@ -27,6 +37,8 @@ pub struct Settings {
     max_taskbar_width: i32,
     #[serde(default)]
     max_taskbar_width_per_output: HashMap<String, i32>,
+    #[serde(default)]
+    dimensions_per_output: HashMap<String, OutputDimensions>,
     #[serde(default = "default_scroll_arrow_left")]
     scroll_arrow_left: String,
     #[serde(default = "default_scroll_arrow_right")]
@@ -290,12 +302,18 @@ impl Settings {
         self.show_window_titles
     }
 
-    pub fn min_button_width(&self) -> i32 {
-        self.min_button_width
+    pub fn min_button_width(&self, output: Option<&str>) -> i32 {
+        output
+            .and_then(|name| self.dimensions_per_output.get(name))
+            .and_then(|dims| dims.min_button_width)
+            .unwrap_or(self.min_button_width)
     }
 
-    pub fn max_button_width(&self) -> i32 {
-        self.max_button_width
+    pub fn max_button_width(&self, output: Option<&str>) -> i32 {
+        output
+            .and_then(|name| self.dimensions_per_output.get(name))
+            .and_then(|dims| dims.max_button_width)
+            .unwrap_or(self.max_button_width)
     }
 
     pub fn icon_size(&self) -> i32 {
@@ -308,7 +326,11 @@ impl Settings {
 
     pub fn max_taskbar_width_for_output(&self, output: Option<&str>) -> i32 {
         output
-            .and_then(|name| self.max_taskbar_width_per_output.get(name).copied())
+            .and_then(|name| {
+                self.dimensions_per_output.get(name)
+                    .and_then(|dims| dims.max_taskbar_width)
+                    .or_else(|| self.max_taskbar_width_per_output.get(name).copied())
+            })
             .unwrap_or(self.max_taskbar_width)
     }
 
