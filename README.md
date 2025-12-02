@@ -60,17 +60,17 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
     "max_button_width": 235,
     "max_taskbar_width": 1200,
     "click_actions": {
-      "left_click_unfocused": "focus",
+      "left_click_unfocused": "focus-window",
       "left_click_focused": "maximize-column",
-      "double_click": "maximize-edges",
+      "double_click": "maximize-window-to-edges",
       "right_click": "menu",
-      "middle_click": "close"
+      "middle_click": "close-window"
     },
     "context_menu": [
       {"label": "  Maximize Column", "action": "maximize-column"},
-      {"label": "  Maximize to Edges", "action": "maximize-edges"},
-      {"label": "󰉩  Toggle Floating", "action": "toggle-floating"},
-      {"label": "  Close Window", "action": "close"}
+      {"label": "  Maximize to Edges", "action": "maximize-window-to-edges"},
+      {"label": "󰉩  Toggle Floating", "action": "toggle-window-floating"},
+      {"label": "  Close Window", "action": "close-window"}
     ],
     "ignore_rules": [],
     "notifications": {
@@ -131,23 +131,38 @@ Configure what happens when you click buttons. All click types can be assigned a
 
 ```jsonc
 "click_actions": {
-  "left_click_unfocused": "focus",
+  "left_click_unfocused": "focus-window",
   "left_click_focused": "maximize-column",
-  "double_click": "maximize-edges",
+  "double_click": "maximize-window-to-edges",
   "right_click": "menu",
-  "middle_click": "close"
+  "middle_click": "close-window"
 }
 ```
 
 **Available actions:**
 - `"none"` - Do nothing
-- `"focus"` - Focus/activate the window
-- `"close"` - Close the window
+- `"focus-window"` - Focus/activate the window
+- `"close-window"` - Close the window
 - `"maximize-column"` - Maximize column width (respects gaps/borders)
-- `"maximize-edges"` - Maximize window to screen edges (no gaps)
+- `"maximize-window-to-edges"` - Maximize window to screen edges (no gaps)
 - `"center-column"` - Center the focused column on the screen
-- `"fullscreen"` - Toggle fullscreen mode
-- `"toggle-floating"` - Toggle between floating and tiled
+- `"center-window"` - Center the window on the screen
+- `"center-visible-columns"` - Center all fully visible columns on the screen
+- `"expand-column-to-available-width"` - Expand column to fill available width
+- `"fullscreen-window"` - Toggle fullscreen mode
+- `"toggle-windowed-fullscreen"` - Toggle windowed fullscreen mode
+- `"toggle-window-floating"` - Toggle between floating and tiled
+- `"consume-window-into-column"` - Stack window into the adjacent column
+- `"expel-window-from-column"` - Unstack window from its column
+- `"reset-window-height"` - Reset window height to default
+- `"switch-preset-column-width"` - Cycle through preset column widths
+- `"switch-preset-window-height"` - Cycle through preset window heights
+- `"move-window-to-workspace-down"` - Move window to workspace below
+- `"move-window-to-workspace-up"` - Move window to workspace above
+- `"move-window-to-monitor-left"` - Move window to monitor on the left
+- `"move-window-to-monitor-right"` - Move window to monitor on the right
+- `"toggle-column-tabbed-display"` - Toggle tabbed display mode for column
+- `"focus-workspace-previous"` - Switch to previously focused workspace
 - `"menu"` - Show context menu
 
 ### Context Menu
@@ -156,11 +171,11 @@ Customize which actions appear in the context menu and their order:
 
 ```jsonc
 "context_menu": [
-  {"label": "  Fullscreen", "action": "fullscreen"},
+  {"label": "  Fullscreen", "action": "fullscreen-window"},
   {"label": "  Maximize Column", "action": "maximize-column"},
-  {"label": "  Maximize to Edges", "action": "maximize-edges"},
-  {"label": "󰉩  Toggle Floating", "action": "toggle-floating"},
-  {"label": "  Close Window", "action": "close"}
+  {"label": "  Maximize to Edges", "action": "maximize-window-to-edges"},
+  {"label": "󰉩  Toggle Floating", "action": "toggle-window-floating"},
+  {"label": "  Close Window", "action": "close-window"}
 ]
 ```
 
@@ -177,14 +192,14 @@ Override click actions and add CSS classes based on app ID and window title patt
       "match": ".*Picture-in-Picture.*",
       "class": "pip",
       "click_actions": {
-        "left_click_focused": "toggle-floating",
-        "middle_click": "close"
+        "left_click_focused": "toggle-window-floating",
+        "middle_click": "close-window"
       }
     },
     {
       "match": ".*",
       "click_actions": {
-        "left_click_focused": "maximize-edges"
+        "left_click_focused": "maximize-window-to-edges"
       }
     }
   ],

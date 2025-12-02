@@ -59,6 +59,109 @@ impl CompositorClient {
         validate_handled(response)
     }
 
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn center_window(&self, window_id: u64) -> Result<(), ModuleError> {
+        let response = send_request(Request::Action(Action::CenterWindow { id: Some(window_id) }))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn center_visible_columns(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::CenterVisibleColumns {}))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn expand_column_to_available_width(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::ExpandColumnToAvailableWidth {}))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn toggle_windowed_fullscreen(&self, window_id: u64) -> Result<(), ModuleError> {
+        let response = send_request(Request::Action(Action::ToggleWindowedFullscreen { id: Some(window_id) }))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn consume_window_into_column(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::ConsumeWindowIntoColumn {}))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn expel_window_from_column(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::ExpelWindowFromColumn {}))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn reset_window_height(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::ResetWindowHeight { id: None }))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn switch_preset_column_width(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::SwitchPresetColumnWidth {}))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn switch_preset_window_height(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::SwitchPresetWindowHeight { id: None }))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn move_window_to_workspace_down(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::MoveWindowToWorkspaceDown { focus: false }))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn move_window_to_workspace_up(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::MoveWindowToWorkspaceUp { focus: false }))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn move_window_to_monitor_left(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::MoveWindowToMonitorLeft {}))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn move_window_to_monitor_right(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::MoveWindowToMonitorRight {}))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn toggle_column_tabbed_display(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::ToggleColumnTabbedDisplay {}))?;
+        validate_handled(response)
+    }
+
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn focus_workspace_previous(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focus_window(window_id)?;
+        let response = send_request(Request::Action(Action::FocusWorkspacePrevious {}))?;
+        validate_handled(response)
+    }
+
     pub fn query_outputs(&self) -> Result<HashMap<String, Output>, ModuleError> {
         let response = send_request(Request::Outputs)?;
         match response {

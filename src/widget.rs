@@ -218,12 +218,12 @@ impl WindowButton {
         use crate::settings::WindowAction;
         match action {
             WindowAction::None => {}
-            WindowAction::Focus => {
+            WindowAction::FocusWindow => {
                 if let Err(e) = state.compositor().focus_window(window_id) {
                     tracing::warn!(%e, id = window_id, "focus failed");
                 }
             }
-            WindowAction::Close => {
+            WindowAction::CloseWindow => {
                 if let Err(e) = state.compositor().close_window(window_id) {
                     tracing::warn!(%e, id = window_id, "close failed");
                 }
@@ -233,7 +233,7 @@ impl WindowButton {
                     tracing::warn!(%e, id = window_id, "maximize column failed");
                 }
             }
-            WindowAction::MaximizeEdges => {
+            WindowAction::MaximizeWindowToEdges => {
                 if let Err(e) = state.compositor().maximize_window_to_edges(window_id) {
                     tracing::warn!(%e, id = window_id, "maximize to edges failed");
                 }
@@ -243,14 +243,89 @@ impl WindowButton {
                     tracing::warn!(%e, id = window_id, "center column failed");
                 }
             }
-            WindowAction::Fullscreen => {
+            WindowAction::CenterWindow => {
+                if let Err(e) = state.compositor().center_window(window_id) {
+                    tracing::warn!(%e, id = window_id, "center window failed");
+                }
+            }
+            WindowAction::CenterVisibleColumns => {
+                if let Err(e) = state.compositor().center_visible_columns(window_id) {
+                    tracing::warn!(%e, id = window_id, "center visible columns failed");
+                }
+            }
+            WindowAction::ExpandColumnToAvailableWidth => {
+                if let Err(e) = state.compositor().expand_column_to_available_width(window_id) {
+                    tracing::warn!(%e, id = window_id, "expand column failed");
+                }
+            }
+            WindowAction::FullscreenWindow => {
                 if let Err(e) = state.compositor().fullscreen_window(window_id) {
                     tracing::warn!(%e, id = window_id, "fullscreen failed");
                 }
             }
-            WindowAction::ToggleFloating => {
+            WindowAction::ToggleWindowedFullscreen => {
+                if let Err(e) = state.compositor().toggle_windowed_fullscreen(window_id) {
+                    tracing::warn!(%e, id = window_id, "toggle windowed fullscreen failed");
+                }
+            }
+            WindowAction::ToggleWindowFloating => {
                 if let Err(e) = state.compositor().toggle_floating(window_id) {
                     tracing::warn!(%e, id = window_id, "toggle floating failed");
+                }
+            }
+            WindowAction::ConsumeWindowIntoColumn => {
+                if let Err(e) = state.compositor().consume_window_into_column(window_id) {
+                    tracing::warn!(%e, id = window_id, "consume window into column failed");
+                }
+            }
+            WindowAction::ExpelWindowFromColumn => {
+                if let Err(e) = state.compositor().expel_window_from_column(window_id) {
+                    tracing::warn!(%e, id = window_id, "expel window from column failed");
+                }
+            }
+            WindowAction::ResetWindowHeight => {
+                if let Err(e) = state.compositor().reset_window_height(window_id) {
+                    tracing::warn!(%e, id = window_id, "reset window height failed");
+                }
+            }
+            WindowAction::SwitchPresetColumnWidth => {
+                if let Err(e) = state.compositor().switch_preset_column_width(window_id) {
+                    tracing::warn!(%e, id = window_id, "switch preset column width failed");
+                }
+            }
+            WindowAction::SwitchPresetWindowHeight => {
+                if let Err(e) = state.compositor().switch_preset_window_height(window_id) {
+                    tracing::warn!(%e, id = window_id, "switch preset window height failed");
+                }
+            }
+            WindowAction::MoveWindowToWorkspaceDown => {
+                if let Err(e) = state.compositor().move_window_to_workspace_down(window_id) {
+                    tracing::warn!(%e, id = window_id, "move window to workspace down failed");
+                }
+            }
+            WindowAction::MoveWindowToWorkspaceUp => {
+                if let Err(e) = state.compositor().move_window_to_workspace_up(window_id) {
+                    tracing::warn!(%e, id = window_id, "move window to workspace up failed");
+                }
+            }
+            WindowAction::MoveWindowToMonitorLeft => {
+                if let Err(e) = state.compositor().move_window_to_monitor_left(window_id) {
+                    tracing::warn!(%e, id = window_id, "move window to monitor left failed");
+                }
+            }
+            WindowAction::MoveWindowToMonitorRight => {
+                if let Err(e) = state.compositor().move_window_to_monitor_right(window_id) {
+                    tracing::warn!(%e, id = window_id, "move window to monitor right failed");
+                }
+            }
+            WindowAction::ToggleColumnTabbedDisplay => {
+                if let Err(e) = state.compositor().toggle_column_tabbed_display(window_id) {
+                    tracing::warn!(%e, id = window_id, "toggle column tabbed display failed");
+                }
+            }
+            WindowAction::FocusWorkspacePrevious => {
+                if let Err(e) = state.compositor().focus_workspace_previous(window_id) {
+                    tracing::warn!(%e, id = window_id, "focus workspace previous failed");
                 }
             }
             WindowAction::Menu => {}

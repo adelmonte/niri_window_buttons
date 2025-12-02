@@ -102,13 +102,28 @@ impl Default for ClickActions {
 #[serde(rename_all = "kebab-case")]
 pub enum WindowAction {
     None,
-    Focus,
-    Close,
+    FocusWindow,
+    CloseWindow,
     MaximizeColumn,
-    MaximizeEdges,
+    MaximizeWindowToEdges,
     CenterColumn,
-    Fullscreen,
-    ToggleFloating,
+    CenterWindow,
+    CenterVisibleColumns,
+    ExpandColumnToAvailableWidth,
+    FullscreenWindow,
+    ToggleWindowedFullscreen,
+    ToggleWindowFloating,
+    ConsumeWindowIntoColumn,
+    ExpelWindowFromColumn,
+    ResetWindowHeight,
+    SwitchPresetColumnWidth,
+    SwitchPresetWindowHeight,
+    MoveWindowToWorkspaceDown,
+    MoveWindowToWorkspaceUp,
+    MoveWindowToMonitorLeft,
+    MoveWindowToMonitorRight,
+    ToggleColumnTabbedDisplay,
+    FocusWorkspacePrevious,
     Menu,
 }
 
@@ -157,11 +172,11 @@ fn default_max_taskbar() -> i32 { 1200 }
 fn default_scroll_arrow_left() -> String { "◀".to_string() }
 fn default_scroll_arrow_right() -> String { "▶".to_string() }
 
-fn default_left_unfocused() -> WindowAction { WindowAction::Focus }
+fn default_left_unfocused() -> WindowAction { WindowAction::FocusWindow }
 fn default_left_focused() -> WindowAction { WindowAction::MaximizeColumn }
-fn default_double_click() -> WindowAction { WindowAction::MaximizeEdges }
+fn default_double_click() -> WindowAction { WindowAction::MaximizeWindowToEdges }
 fn default_right_click() -> WindowAction { WindowAction::Menu }
-fn default_middle_click() -> WindowAction { WindowAction::Close }
+fn default_middle_click() -> WindowAction { WindowAction::CloseWindow }
 
 fn default_context_menu() -> Vec<ContextMenuItem> {
     vec![
@@ -171,15 +186,15 @@ fn default_context_menu() -> Vec<ContextMenuItem> {
         },
         ContextMenuItem {
             label: "  Maximize to Edges".to_string(),
-            action: WindowAction::MaximizeEdges,
+            action: WindowAction::MaximizeWindowToEdges,
         },
         ContextMenuItem {
             label: "󰉩  Toggle Floating".to_string(),
-            action: WindowAction::ToggleFloating,
+            action: WindowAction::ToggleWindowFloating,
         },
         ContextMenuItem {
             label: "  Close Window".to_string(),
-            action: WindowAction::Close,
+            action: WindowAction::CloseWindow,
         },
     ]
 }
