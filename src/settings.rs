@@ -27,6 +27,10 @@ pub struct Settings {
     max_taskbar_width: i32,
     #[serde(default)]
     max_taskbar_width_per_output: HashMap<String, i32>,
+    #[serde(default = "default_scroll_arrow_left")]
+    scroll_arrow_left: String,
+    #[serde(default = "default_scroll_arrow_right")]
+    scroll_arrow_right: String,
     #[serde(default)]
     click_actions: ClickActions,
     #[serde(default)]
@@ -149,6 +153,8 @@ fn default_max_width() -> i32 { 235 }
 fn default_icon_size() -> i32 { 24 }
 fn default_spacing() -> i32 { 6 }
 fn default_max_taskbar() -> i32 { 1200 }
+fn default_scroll_arrow_left() -> String { "◀".to_string() }
+fn default_scroll_arrow_right() -> String { "▶".to_string() }
 
 fn default_left_unfocused() -> WindowAction { WindowAction::Focus }
 fn default_left_focused() -> WindowAction { WindowAction::MaximizeColumn }
@@ -288,6 +294,14 @@ impl Settings {
         output
             .and_then(|name| self.max_taskbar_width_per_output.get(name).copied())
             .unwrap_or(self.max_taskbar_width)
+    }
+
+    pub fn scroll_arrow_left(&self) -> &str {
+        &self.scroll_arrow_left
+    }
+
+    pub fn scroll_arrow_right(&self) -> &str {
+        &self.scroll_arrow_right
     }
 
     pub fn context_menu(&self) -> &[ContextMenuItem] {

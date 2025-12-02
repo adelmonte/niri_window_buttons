@@ -112,6 +112,19 @@ Set different taskbar widths for different monitors:
 ```
 The `max_taskbar_width` is used as the default when no output-specific width is configured. Output names can be found using `niri msg outputs`.
 
+#### Scroll Overflow Behavior
+
+When window buttons exceed `max_taskbar_width`, the taskbar becomes scrollable with arrow buttons. The arrow glyphs can be customized:
+
+```jsonc
+{
+  "scroll_arrow_left": "←",
+  "scroll_arrow_right": "→"
+}
+```
+
+Defaults are `"◀"` and `"▶"`. You can use any unicode characters, emoji, or Nerd Font icons. The arrows can also be styled via CSS using the `.scroll-arrow-left` and `.scroll-arrow-right` classes.
+
 ### Click Actions
 
 Configure what happens when you click buttons. All click types can be assigned any action, including the context menu:

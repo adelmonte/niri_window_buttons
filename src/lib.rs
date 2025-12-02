@@ -62,13 +62,14 @@ waybar_module!(WindowButtonsModule);
 
 async fn initialize_module(info: &waybar_cffi::InitInfo, state: SharedState) -> Result<(), ModuleError> {
     let root = info.get_root_widget();
-    
+
     let main_container = gtk::Box::new(Orientation::Horizontal, 0);
-    
+
     let left_arrow = gtk::Button::new();
-    left_arrow.set_label("◀");
+    left_arrow.set_label(state.settings().scroll_arrow_left());
     left_arrow.set_relief(ReliefStyle::None);
     left_arrow.style_context().add_class("scroll-arrow");
+    left_arrow.style_context().add_class("scroll-arrow-left");
     left_arrow.set_sensitive(false);
     left_arrow.set_no_show_all(true);
     left_arrow.hide();
@@ -106,9 +107,10 @@ async fn initialize_module(info: &waybar_cffi::InitInfo, state: SharedState) -> 
     scrolled.add(&button_container);
     
     let right_arrow = gtk::Button::new();
-    right_arrow.set_label("▶");
+    right_arrow.set_label(state.settings().scroll_arrow_right());
     right_arrow.set_relief(ReliefStyle::None);
     right_arrow.style_context().add_class("scroll-arrow");
+    right_arrow.style_context().add_class("scroll-arrow-right");
     right_arrow.set_sensitive(false);
     right_arrow.set_no_show_all(true);
     right_arrow.hide();
