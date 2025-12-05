@@ -22,7 +22,7 @@ jobs:
       - name: Setup Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.87
+          toolchain: stable
           override: true
           components: rustfmt, clippy
 
@@ -47,5 +47,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: niri_window_buttons
-          path: /home/runner/work/niri_window_buttons/niri_window_buttons/target/release
+          path: /home/runner/work/niri_window_buttons/niri_window_buttons/target/release/libniri_window_buttons.so
           retention-days: 45
