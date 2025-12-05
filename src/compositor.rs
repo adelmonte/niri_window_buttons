@@ -379,8 +379,19 @@ impl WindowTracker {
                 }
             }
             Event::WindowOpenedOrChanged { window } => {
-                if let Some(Ready { windows, .. }) = &mut self.state {
+                if let Some(Ready { windows, last_focused_per_workspace, .. }) = &mut self.state {
                     if window.is_focused {
+                        // Save the currently focused tiled window before unfocusing it
+                        if let Some(old_focused) = windows.values().find(|w| w.is_focused).map(|w| w.id) {
+                            if let Some(old_window) = windows.get(&old_focused) {
+                                if old_window.layout.pos_in_scrolling_layout.is_some() {
+                                    if let Some(ws_id) = old_window.workspace_id {
+                                        last_focused_per_workspace.insert(ws_id, old_focused);
+                                    }
+                                }
+                            }
+                        }
+
                         for w in windows.values_mut() {
                             w.is_focused = false;
                         }
