@@ -4,7 +4,7 @@ name: Build Module
 on:
   push:
     branches: [main]
-    paths-ignore: ["*.md", "*.png", "*.jpg"]
+    paths-ignore: ["**/*.md", "**/*.png", "**/*.jpg"]
   workflow_dispatch:
 
 permissions:
