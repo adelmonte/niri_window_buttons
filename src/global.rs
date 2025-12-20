@@ -1,11 +1,9 @@
 use std::sync::Arc;
 use async_channel::Sender;
 use futures::{Stream, StreamExt};
-use niri_ipc::Workspace;
 use waybar_cffi::gtk::glib;
 use crate::{
-    compositor::{CompositorClient, WindowSnapshot},
-    errors::ModuleError,
+    compositor::{CompositorClient, WindowSnapshot, WorkspaceEventStream},
     icons::IconResolver,
     notifications::{self, NotificationData},
     settings::Settings,
@@ -42,7 +40,7 @@ impl SharedState {
         &self.0.compositor
     }
 
-    pub fn create_event_stream(&self) -> Result<impl Stream<Item = EventMessage>, ModuleError> {
+    pub fn create_event_stream(&self) -> impl Stream<Item = EventMessage> {
         let (tx, rx) = async_channel::unbounded();
 
         if self.settings().notifications_enabled() {
@@ -50,19 +48,13 @@ impl SharedState {
         }
 
         glib::spawn_future_local(forward_window_updates(tx.clone(), self.compositor().create_window_stream()));
+        glib::spawn_future_local(forward_workspace_changes(tx, self.compositor().create_workspace_stream()));
 
-        let mut workspace_stream_delay = Some((tx, self.compositor().create_workspace_stream()?));
-
-        Ok(async_stream::stream! {
+        async_stream::stream! {
             while let Ok(event) = rx.recv().await {
-                if let Some((tx, stream)) = workspace_stream_delay.take() {
-                    if matches!(&event, EventMessage::Workspaces(_)) {
-                        glib::spawn_future_local(forward_workspace_changes(tx, stream));
-                    }
-                }
                 yield event;
             }
-        })
+        }
     }
 }
 
@@ -89,9 +81,8 @@ async fn forward_window_updates(tx: Sender<EventMessage>, stream: crate::composi
     }
 }
 
-async fn forward_workspace_changes(tx: Sender<EventMessage>, stream: impl Stream<Item = Vec<Workspace>>) {
-    let mut workspace_stream = Box::pin(stream);
-    while workspace_stream.next().await.is_some() {
+async fn forward_workspace_changes(tx: Sender<EventMessage>, stream: WorkspaceEventStream) {
+    while stream.next_workspaces().await.is_some() {
         if let Err(e) = tx.send(EventMessage::Workspaces(())).await {
             tracing::error!(%e, "failed to forward workspace change");
         }

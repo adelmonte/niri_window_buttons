@@ -1,6 +1,5 @@
 use std::{collections::HashMap, ops::Deref};
 use async_channel::{Receiver, Sender};
-use futures::Stream;
 use niri_ipc::{Action, Event, Output, Reply, Request, Workspace, socket::Socket};
 use crate::{errors::ModuleError, settings::Settings};
 
@@ -175,24 +174,8 @@ impl CompositorClient {
         WindowEventStream::start(self.settings.only_current_workspace())
     }
 
-    pub fn create_workspace_stream(&self) -> Result<impl Stream<Item = Vec<Workspace>>, ModuleError> {
-        let mut socket = connect_socket()?;
-        let response = socket.send(Request::EventStream).map_err(ModuleError::CompositorIpc)?;
-        validate_handled(response)?;
-
-        let mut event_reader = socket.read_events();
-        Ok(async_stream::stream! {
-            loop {
-                match event_reader() {
-                    Ok(Event::WorkspacesChanged { workspaces }) => yield workspaces,
-                    Ok(_) => {},
-                    Err(e) => {
-                        tracing::error!(%e, "workspace event stream error");
-                        break;
-                    }
-                }
-            }
-        })
+    pub fn create_workspace_stream(&self) -> WorkspaceEventStream {
+        WorkspaceEventStream::start()
     }
 
     #[tracing::instrument(level = "TRACE", err)]
@@ -289,6 +272,47 @@ impl WindowEventStream {
     }
 }
 
+pub struct WorkspaceEventStream {
+    receiver: Receiver<Vec<Workspace>>,
+}
+
+impl WorkspaceEventStream {
+    fn start() -> Self {
+        let (tx, rx) = async_channel::unbounded();
+        std::thread::spawn(move || {
+            if let Err(e) = run_workspace_stream(tx) {
+                tracing::error!(%e, "workspace event stream terminated");
+            }
+        });
+
+        Self { receiver: rx }
+    }
+
+    pub async fn next_workspaces(&self) -> Option<Vec<Workspace>> {
+        self.receiver.recv().await.ok()
+    }
+}
+
+fn run_workspace_stream(tx: Sender<Vec<Workspace>>) -> Result<(), ModuleError> {
+    let mut socket = connect_socket()?;
+    let response = socket.send(Request::EventStream).map_err(ModuleError::CompositorIpc)?;
+    validate_handled(response)?;
+
+    let mut event_reader = socket.read_events();
+    loop {
+        match event_reader() {
+            Ok(Event::WorkspacesChanged { workspaces }) => {
+                tx.send_blocking(workspaces).map_err(|_| ModuleError::SnapshotChannelClosed)?;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!(%e, "workspace event stream error");
+                return Err(ModuleError::CompositorIpc(e));
+            }
+        }
+    }
+}
+
 fn run_window_stream(tx: Sender<WindowSnapshot>, filter_workspace: bool) -> Result<(), ModuleError> {
     let mut socket = connect_socket()?;
     let response = socket.send(Request::EventStream).map_err(ModuleError::CompositorIpc)?;
@@ -381,7 +405,6 @@ impl WindowTracker {
             Event::WindowOpenedOrChanged { window } => {
                 if let Some(Ready { windows, last_focused_per_workspace, .. }) = &mut self.state {
                     if window.is_focused {
-                        // Save the currently focused tiled window before unfocusing it
                         if let Some(old_focused) = windows.values().find(|w| w.is_focused).map(|w| w.id) {
                             if let Some(old_window) = windows.get(&old_focused) {
                                 if old_window.layout.pos_in_scrolling_layout.is_some() {

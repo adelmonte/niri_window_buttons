@@ -252,13 +252,7 @@ impl ModuleInstance {
     async fn run_event_loop(&mut self) {
         let display_filter = Arc::new(Mutex::new(self.determine_display_filter().await));
 
-        let mut event_stream = match self.state.create_event_stream() {
-            Ok(stream) => Box::pin(stream),
-            Err(e) => {
-                tracing::error!(%e, "failed to create event stream");
-                return;
-            }
-        };
+        let mut event_stream = Box::pin(self.state.create_event_stream());
 
         while let Some(event) = event_stream.next().await {
             match event {
