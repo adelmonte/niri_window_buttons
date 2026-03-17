@@ -264,162 +264,162 @@ impl WindowButton {
         self.audio_event_box.set_tooltip_text(Some("Toggle mute"));
     }
 
-	fn setup_click_handlers(&self, window_id: u64) {
-		let state = self.state.clone();
-		let button_ref = self.gtk_button.clone();
-		let last_click_time = Rc::new(RefCell::new(Instant::now() - Duration::from_secs(1)));
-		let skip_clicked_press = self.skip_clicked.clone();
-		let skip_clicked_click = self.skip_clicked.clone();
-		let app_id = self.app_id.clone();
-		let title = self.title.clone();
-		let selection_left = self.selection.clone();
+    fn setup_click_handlers(&self, window_id: u64) {
+        let state = self.state.clone();
+        let button_ref = self.gtk_button.clone();
+        let last_click_time = Rc::new(RefCell::new(Instant::now() - Duration::from_secs(1)));
+        let skip_clicked_press = self.skip_clicked.clone();
+        let skip_clicked_click = self.skip_clicked.clone();
+        let app_id = self.app_id.clone();
+        let title = self.title.clone();
+        let selection_left = self.selection.clone();
 
-		let title_clone = title.clone();
-		self.gtk_button.connect_clicked(move |_| {
-		    if *skip_clicked_click.borrow() {
-		        *skip_clicked_click.borrow_mut() = false;
-		        return;
-		    }
+        let title_clone = title.clone();
+        self.gtk_button.connect_clicked(move |_| {
+            if *skip_clicked_click.borrow() {
+                *skip_clicked_click.borrow_mut() = false;
+                return;
+            }
 
-		    let is_currently_focused = button_ref.style_context().has_class("focused");
-		    let app_id_ref = app_id.as_deref();
-		    let title_ref = title_clone.borrow();
-		    let title_str = title_ref.as_deref();
-		    let actions = state.settings().get_click_actions(app_id_ref, title_str);
+            let is_currently_focused = button_ref.style_context().has_class("focused");
+            let app_id_ref = app_id.as_deref();
+            let title_ref = title_clone.borrow();
+            let title_str = title_ref.as_deref();
+            let actions = state.settings().get_click_actions(app_id_ref, title_str);
 
-		    if is_currently_focused {
-		        let mut last_click = last_click_time.borrow_mut();
-		        let now = Instant::now();
-		        let time_since_last = now.duration_since(*last_click);
+            if is_currently_focused {
+                let mut last_click = last_click_time.borrow_mut();
+                let now = Instant::now();
+                let time_since_last = now.duration_since(*last_click);
 
-		        if time_since_last < Duration::from_millis(300) {
-		            clear_selection(&selection_left);
-		            Self::execute_click_action(&state, window_id, &actions.double_click, app_id_ref, title_str);
-		            *last_click = Instant::now() - Duration::from_secs(1);
-		        } else {
-		            clear_selection(&selection_left);
-		            Self::execute_click_action(&state, window_id, &actions.left_click_focused, app_id_ref, title_str);
-		            *last_click = now;
-		        }
-		    } else {
-		        clear_selection(&selection_left);
-		        Self::execute_click_action(&state, window_id, &actions.left_click_unfocused, app_id_ref, title_str);
-		    }
-		});
+                if time_since_last < Duration::from_millis(300) {
+                    clear_selection(&selection_left);
+                    Self::execute_click_action(&state, window_id, &actions.double_click, app_id_ref, title_str);
+                    *last_click = Instant::now() - Duration::from_secs(1);
+                } else {
+                    clear_selection(&selection_left);
+                    Self::execute_click_action(&state, window_id, &actions.left_click_focused, app_id_ref, title_str);
+                    *last_click = now;
+                }
+            } else {
+                clear_selection(&selection_left);
+                Self::execute_click_action(&state, window_id, &actions.left_click_unfocused, app_id_ref, title_str);
+            }
+        });
 
-		let state_press = self.state.clone();
-		let button_ref_press = self.gtk_button.clone();
-		let app_id_press = self.app_id.clone();
-		let title_press = title.clone();
-		let selection_press = self.selection.clone();
-		let menu_self = self.clone_for_menu();
+        let state_press = self.state.clone();
+        let button_ref_press = self.gtk_button.clone();
+        let app_id_press = self.app_id.clone();
+        let title_press = title.clone();
+        let selection_press = self.selection.clone();
+        let menu_self = self.clone_for_menu();
 
-		self.gtk_button.connect_button_press_event(move |btn, event| {
-		    if event.button() == 1 {
-		        let modifier_held = Self::check_modifier(btn, state_press.settings().multi_select_modifier());
-		        if modifier_held {
-		            *skip_clicked_press.borrow_mut() = true;
-		            let mut sel = selection_press.borrow_mut();
-		            if sel.contains_key(&window_id) {
-		                sel.remove(&window_id);
-		                button_ref_press.style_context().remove_class("selected");
-		            } else {
-		                sel.insert(window_id, button_ref_press.clone());
-		                button_ref_press.style_context().add_class("selected");
-		            }
-		        } else if state_press.settings().left_click_focus_on_press() {
-		            let is_currently_focused = button_ref_press.style_context().has_class("focused");
-		            if !is_currently_focused {
-		                *skip_clicked_press.borrow_mut() = true;
-		                clear_selection(&selection_press);
-		                let app_id_ref = app_id_press.as_deref();
-		                let title_ref = title_press.borrow();
-		                let title_str = title_ref.as_deref();
-		                let actions = state_press.settings().get_click_actions(app_id_ref, title_str);
-		                Self::execute_click_action(&state_press, window_id, &actions.left_click_unfocused, app_id_ref, title_str);
-		            }
-		        }
-		        gtk::glib::Propagation::Proceed
-		    } else if event.button() == 2 {
-		        let is_currently_focused = button_ref_press.style_context().has_class("focused");
-		        let app_id_ref = app_id_press.as_deref();
-		        let title_ref = title_press.borrow();
-		        let title_str = title_ref.as_deref();
-		        let actions = state_press.settings().get_click_actions(app_id_ref, title_str);
-		        let action = if is_currently_focused {
-		            &actions.middle_click_focused
-		        } else {
-		            &actions.middle_click_unfocused
-		        };
-		        if action.is_menu() {
-		            menu_self.display_context_menu(window_id);
-		        } else {
-		            Self::execute_click_action(&state_press, window_id, action, app_id_ref, title_str);
-		        }
-		        gtk::glib::Propagation::Stop
-		    } else if event.button() == 3 {
-		        let selection_count = selection_press.borrow().len();
-		        if selection_count > 0 {
-		            menu_self.display_multi_select_menu();
-		        } else {
-		            let is_currently_focused = button_ref_press.style_context().has_class("focused");
-		            let app_id_ref = app_id_press.as_deref();
-		            let title_ref = title_press.borrow();
-		            let title_str = title_ref.as_deref();
-		            let actions = state_press.settings().get_click_actions(app_id_ref, title_str);
-		            let action = if is_currently_focused {
-		                &actions.right_click_focused
-		            } else {
-		                &actions.right_click_unfocused
-		            };
-		            if action.is_menu() {
-		                menu_self.display_context_menu(window_id);
-		            } else {
-		                Self::execute_click_action(&state_press, window_id, action, app_id_ref, title_str);
-		            }
-		        }
-		        gtk::glib::Propagation::Stop
-		    } else {
-		        gtk::glib::Propagation::Proceed
-		    }
-		});
+        self.gtk_button.connect_button_press_event(move |btn, event| {
+            if event.button() == 1 {
+                let modifier_held = Self::check_modifier(btn, state_press.settings().multi_select_modifier());
+                if modifier_held {
+                    *skip_clicked_press.borrow_mut() = true;
+                    let mut sel = selection_press.borrow_mut();
+                    if sel.contains_key(&window_id) {
+                        sel.remove(&window_id);
+                        button_ref_press.style_context().remove_class("selected");
+                    } else {
+                        sel.insert(window_id, button_ref_press.clone());
+                        button_ref_press.style_context().add_class("selected");
+                    }
+                } else if state_press.settings().left_click_focus_on_press() {
+                    let is_currently_focused = button_ref_press.style_context().has_class("focused");
+                    if !is_currently_focused {
+                        *skip_clicked_press.borrow_mut() = true;
+                        clear_selection(&selection_press);
+                        let app_id_ref = app_id_press.as_deref();
+                        let title_ref = title_press.borrow();
+                        let title_str = title_ref.as_deref();
+                        let actions = state_press.settings().get_click_actions(app_id_ref, title_str);
+                        Self::execute_click_action(&state_press, window_id, &actions.left_click_unfocused, app_id_ref, title_str);
+                    }
+                }
+                gtk::glib::Propagation::Proceed
+            } else if event.button() == 2 {
+                let is_currently_focused = button_ref_press.style_context().has_class("focused");
+                let app_id_ref = app_id_press.as_deref();
+                let title_ref = title_press.borrow();
+                let title_str = title_ref.as_deref();
+                let actions = state_press.settings().get_click_actions(app_id_ref, title_str);
+                let action = if is_currently_focused {
+                    &actions.middle_click_focused
+                } else {
+                    &actions.middle_click_unfocused
+                };
+                if action.is_menu() {
+                    menu_self.display_context_menu(window_id);
+                } else {
+                    Self::execute_click_action(&state_press, window_id, action, app_id_ref, title_str);
+                }
+                gtk::glib::Propagation::Stop
+            } else if event.button() == 3 {
+                let selection_count = selection_press.borrow().len();
+                if selection_count > 0 {
+                    menu_self.display_multi_select_menu();
+                } else {
+                    let is_currently_focused = button_ref_press.style_context().has_class("focused");
+                    let app_id_ref = app_id_press.as_deref();
+                    let title_ref = title_press.borrow();
+                    let title_str = title_ref.as_deref();
+                    let actions = state_press.settings().get_click_actions(app_id_ref, title_str);
+                    let action = if is_currently_focused {
+                        &actions.right_click_focused
+                    } else {
+                        &actions.right_click_unfocused
+                    };
+                    if action.is_menu() {
+                        menu_self.display_context_menu(window_id);
+                    } else {
+                        Self::execute_click_action(&state_press, window_id, action, app_id_ref, title_str);
+                    }
+                }
+                gtk::glib::Propagation::Stop
+            } else {
+                gtk::glib::Propagation::Proceed
+            }
+        });
 
-		let state_scroll = self.state.clone();
-		let app_id_scroll = self.app_id.clone();
-		let title_scroll = title.clone();
-		self.gtk_button.connect_scroll_event(move |_, event| {
-		    use waybar_cffi::gtk::gdk::ScrollDirection;
+        let state_scroll = self.state.clone();
+        let app_id_scroll = self.app_id.clone();
+        let title_scroll = title.clone();
+        self.gtk_button.connect_scroll_event(move |_, event| {
+            use waybar_cffi::gtk::gdk::ScrollDirection;
 
-		    let app_id_ref = app_id_scroll.as_deref();
-		    let title_ref = title_scroll.borrow();
-		    let title_str = title_ref.as_deref();
-		    let actions = state_scroll.settings().get_click_actions(app_id_ref, title_str);
+            let app_id_ref = app_id_scroll.as_deref();
+            let title_ref = title_scroll.borrow();
+            let title_str = title_ref.as_deref();
+            let actions = state_scroll.settings().get_click_actions(app_id_ref, title_str);
 
-		    let (action, scroll_delta) = match event.direction() {
-		        ScrollDirection::Up => (&actions.scroll_up, -1.0),
-		        ScrollDirection::Down => (&actions.scroll_down, 1.0),
-		        ScrollDirection::Smooth => {
-		            let (delta_x, delta_y) = event.delta();
-		            let delta = if delta_x.abs() > delta_y.abs() { delta_x } else { delta_y };
-		            if delta < -0.01 {
-		                (&actions.scroll_up, delta)
-		            } else if delta > 0.01 {
-		                (&actions.scroll_down, delta)
-		            } else {
-		                return gtk::glib::Propagation::Stop;
-		            }
-		        }
-		        _ => return gtk::glib::Propagation::Stop,
-		    };
+            let (action, scroll_delta) = match event.direction() {
+                ScrollDirection::Up => (&actions.scroll_up, -1.0),
+                ScrollDirection::Down => (&actions.scroll_down, 1.0),
+                ScrollDirection::Smooth => {
+                    let (delta_x, delta_y) = event.delta();
+                    let delta = if delta_x.abs() > delta_y.abs() { delta_x } else { delta_y };
+                    if delta < -0.01 {
+                        (&actions.scroll_up, delta)
+                    } else if delta > 0.01 {
+                        (&actions.scroll_down, delta)
+                    } else {
+                        return gtk::glib::Propagation::Stop;
+                    }
+                }
+                _ => return gtk::glib::Propagation::Stop,
+            };
 
-		    if !action.is_none() {
-		        Self::execute_click_action(&state_scroll, window_id, action, app_id_ref, title_str);
-		    } else {
-		        scroll_taskbar(scroll_delta);
-		    }
-		    gtk::glib::Propagation::Stop
-		});
-	}
+            if !action.is_none() {
+                Self::execute_click_action(&state_scroll, window_id, action, app_id_ref, title_str);
+            } else {
+                scroll_taskbar(scroll_delta);
+            }
+            gtk::glib::Propagation::Stop
+        });
+    }
 
     fn execute_click_action(
         state: &SharedState,
@@ -607,160 +607,160 @@ impl WindowButton {
         }
     }
 
-	#[tracing::instrument(level = "TRACE", skip(self))]
-	fn display_context_menu(&self, window_id: u64) {
-		let menu = Menu::new();
-		menu.set_reserve_toggle_size(false);
+    #[tracing::instrument(level = "TRACE", skip(self))]
+    fn display_context_menu(&self, window_id: u64) {
+        let menu = Menu::new();
+        menu.set_reserve_toggle_size(false);
 
-		let menu_items = self.state.settings().context_menu();
+        let menu_items = self.state.settings().context_menu();
 
-		for menu_item in menu_items {
-		    let item = MenuItem::with_label(&menu_item.label);
-		    menu.append(&item);
+        for menu_item in menu_items {
+            let item = MenuItem::with_label(&menu_item.label);
+            menu.append(&item);
 
-		    let state = self.state.clone();
-		    let action = menu_item.action.clone();
-		    let command = menu_item.command.clone();
-		    let app_id = self.app_id.clone();
-		    let title = self.title.borrow().clone();
-		    item.connect_activate(move |_| {
-		        if let Some(ref cmd) = command {
-		            Self::execute_command(cmd, window_id, app_id.as_deref(), title.as_deref());
-		        } else if let Some(ref act) = action {
-		            Self::execute_action(&state, window_id, act);
-		        }
-		    });
-		}
+            let state = self.state.clone();
+            let action = menu_item.action.clone();
+            let command = menu_item.command.clone();
+            let app_id = self.app_id.clone();
+            let title = self.title.borrow().clone();
+            item.connect_activate(move |_| {
+                if let Some(ref cmd) = command {
+                    Self::execute_command(cmd, window_id, app_id.as_deref(), title.as_deref());
+                } else if let Some(ref act) = action {
+                    Self::execute_action(&state, window_id, act);
+                }
+            });
+        }
 
-		menu.show_all();
-		menu.popup_at_pointer(None);
-	}
+        menu.show_all();
+        menu.popup_at_pointer(None);
+    }
 
-	fn execute_command(command: &str, window_id: u64, app_id: Option<&str>, title: Option<&str>) {
-		let cmd = command
-		    .replace("{window_id}", &window_id.to_string())
-		    .replace("{app_id}", app_id.unwrap_or(""))
-		    .replace("{title}", title.unwrap_or(""));
+    fn execute_command(command: &str, window_id: u64, app_id: Option<&str>, title: Option<&str>) {
+        let cmd = command
+            .replace("{window_id}", &window_id.to_string())
+            .replace("{app_id}", app_id.unwrap_or(""))
+            .replace("{title}", title.unwrap_or(""));
 
-		std::thread::spawn(move || {
-		    if let Err(e) = Command::new("sh").arg("-c").arg(&cmd).spawn() {
-		        tracing::error!(%e, "failed to execute command: {}", cmd);
-		    }
-		});
-	}
+        std::thread::spawn(move || {
+            if let Err(e) = Command::new("sh").arg("-c").arg(&cmd).spawn() {
+                tracing::error!(%e, "failed to execute command: {}", cmd);
+            }
+        });
+    }
 
-	fn check_modifier(_button: &gtk::Button, modifier: ModifierKey) -> bool {
-		Self::check_modifier_static(modifier)
-	}
+    fn check_modifier(_button: &gtk::Button, modifier: ModifierKey) -> bool {
+        Self::check_modifier_static(modifier)
+    }
 
-	fn check_modifier_static(modifier: ModifierKey) -> bool {
-		use evdev::Key;
+    fn check_modifier_static(modifier: ModifierKey) -> bool {
+        use evdev::Key;
 
-		let keys_to_check: &[Key] = match modifier {
-		    ModifierKey::Ctrl => &[Key::KEY_LEFTCTRL, Key::KEY_RIGHTCTRL],
-		    ModifierKey::Shift => &[Key::KEY_LEFTSHIFT, Key::KEY_RIGHTSHIFT],
-		    ModifierKey::Alt => &[Key::KEY_LEFTALT, Key::KEY_RIGHTALT],
-		    ModifierKey::Super => &[Key::KEY_LEFTMETA, Key::KEY_RIGHTMETA],
-		};
+        let keys_to_check: &[Key] = match modifier {
+            ModifierKey::Ctrl => &[Key::KEY_LEFTCTRL, Key::KEY_RIGHTCTRL],
+            ModifierKey::Shift => &[Key::KEY_LEFTSHIFT, Key::KEY_RIGHTSHIFT],
+            ModifierKey::Alt => &[Key::KEY_LEFTALT, Key::KEY_RIGHTALT],
+            ModifierKey::Super => &[Key::KEY_LEFTMETA, Key::KEY_RIGHTMETA],
+        };
 
-		let result = evdev::enumerate()
-		    .filter_map(|(_, device)| {
-		        if device.supported_keys().map_or(false, |keys| keys.contains(Key::KEY_LEFTCTRL)) {
-		            Some(device)
-		        } else {
-		            None
-		        }
-		    })
-		    .any(|device| {
-		        if let Ok(key_state) = device.get_key_state() {
-		            keys_to_check.iter().any(|&key| key_state.contains(key))
-		        } else {
-		            false
-		        }
-		    });
+        let result = evdev::enumerate()
+            .filter_map(|(_, device)| {
+                if device.supported_keys().map_or(false, |keys| keys.contains(Key::KEY_LEFTCTRL)) {
+                    Some(device)
+                } else {
+                    None
+                }
+            })
+            .any(|device| {
+                if let Ok(key_state) = device.get_key_state() {
+                    keys_to_check.iter().any(|&key| key_state.contains(key))
+                } else {
+                    false
+                }
+            });
 
-		result
-	}
+        result
+    }
 
-	fn display_multi_select_menu(&self) {
-		let menu = Menu::new();
-		menu.set_reserve_toggle_size(false);
+    fn display_multi_select_menu(&self) {
+        let menu = Menu::new();
+        menu.set_reserve_toggle_size(false);
 
-		let menu_items = self.state.settings().multi_select_menu();
-		let selected_windows: Vec<u64> = self.selection.borrow().keys().copied().collect();
+        let menu_items = self.state.settings().multi_select_menu();
+        let selected_windows: Vec<u64> = self.selection.borrow().keys().copied().collect();
 
-		for menu_item in menu_items {
-		    let item = MenuItem::with_label(&menu_item.label);
-		    menu.append(&item);
+        for menu_item in menu_items {
+            let item = MenuItem::with_label(&menu_item.label);
+            menu.append(&item);
 
-		    let state = self.state.clone();
-		    let selection = self.selection.clone();
-		    let action = menu_item.action.clone();
-		    let command = menu_item.command.clone();
-		    let windows = selected_windows.clone();
-		    item.connect_activate(move |_| {
-		        if let Some(ref cmd) = command {
-		            let windows_str = windows.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(",");
-		            let cmd = cmd.replace("{window_ids}", &windows_str);
-		            std::thread::spawn(move || {
-		                if let Err(e) = Command::new("sh").arg("-c").arg(&cmd).spawn() {
-		                    tracing::error!(%e, "failed to execute multi-select command");
-		                }
-		            });
-		        } else if let Some(ref act) = action {
-		            Self::execute_multi_select_action(&state, &windows, act);
-		        }
-		        clear_selection(&selection);
-		    });
-		}
+            let state = self.state.clone();
+            let selection = self.selection.clone();
+            let action = menu_item.action.clone();
+            let command = menu_item.command.clone();
+            let windows = selected_windows.clone();
+            item.connect_activate(move |_| {
+                if let Some(ref cmd) = command {
+                    let windows_str = windows.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(",");
+                    let cmd = cmd.replace("{window_ids}", &windows_str);
+                    std::thread::spawn(move || {
+                        if let Err(e) = Command::new("sh").arg("-c").arg(&cmd).spawn() {
+                            tracing::error!(%e, "failed to execute multi-select command");
+                        }
+                    });
+                } else if let Some(ref act) = action {
+                    Self::execute_multi_select_action(&state, &windows, act);
+                }
+                clear_selection(&selection);
+            });
+        }
 
-		menu.show_all();
-		menu.popup_at_pointer(None);
-	}
+        menu.show_all();
+        menu.popup_at_pointer(None);
+    }
 
-	fn execute_multi_select_action(state: &SharedState, window_ids: &[u64], action: &MultiSelectAction) {
-		for &window_id in window_ids {
-		    let result = match action {
-		        MultiSelectAction::CloseWindows => state.compositor().close_window(window_id),
-		        MultiSelectAction::MoveToWorkspaceUp => state.compositor().move_window_to_workspace_up(window_id),
-		        MultiSelectAction::MoveToWorkspaceDown => state.compositor().move_window_to_workspace_down(window_id),
-		        MultiSelectAction::MoveToMonitorLeft => state.compositor().move_window_to_monitor_left(window_id),
-		        MultiSelectAction::MoveToMonitorRight => state.compositor().move_window_to_monitor_right(window_id),
-		        MultiSelectAction::MoveToMonitorUp => state.compositor().move_window_to_monitor_up(window_id),
-		        MultiSelectAction::MoveToMonitorDown => state.compositor().move_window_to_monitor_down(window_id),
-		        MultiSelectAction::MoveColumnLeft => state.compositor().move_column_left(window_id),
-		        MultiSelectAction::MoveColumnRight => state.compositor().move_column_right(window_id),
-		        MultiSelectAction::ToggleFloating => state.compositor().toggle_floating(window_id),
-		        MultiSelectAction::FullscreenWindows => state.compositor().fullscreen_window(window_id),
-		        MultiSelectAction::MaximizeColumns => state.compositor().maximize_window_column(window_id),
-		        MultiSelectAction::CenterColumns => state.compositor().center_column(window_id),
-		        MultiSelectAction::ConsumeIntoColumn => state.compositor().consume_window_into_column(window_id),
-		        MultiSelectAction::ToggleTabbedDisplay => state.compositor().toggle_column_tabbed_display(window_id),
-		    };
-		    if let Err(e) = result {
-		        tracing::warn!(%e, id = window_id, "multi-select action failed");
-		    }
-		}
-	}
+    fn execute_multi_select_action(state: &SharedState, window_ids: &[u64], action: &MultiSelectAction) {
+        for &window_id in window_ids {
+            let result = match action {
+                MultiSelectAction::CloseWindows => state.compositor().close_window(window_id),
+                MultiSelectAction::MoveToWorkspaceUp => state.compositor().move_window_to_workspace_up(window_id),
+                MultiSelectAction::MoveToWorkspaceDown => state.compositor().move_window_to_workspace_down(window_id),
+                MultiSelectAction::MoveToMonitorLeft => state.compositor().move_window_to_monitor_left(window_id),
+                MultiSelectAction::MoveToMonitorRight => state.compositor().move_window_to_monitor_right(window_id),
+                MultiSelectAction::MoveToMonitorUp => state.compositor().move_window_to_monitor_up(window_id),
+                MultiSelectAction::MoveToMonitorDown => state.compositor().move_window_to_monitor_down(window_id),
+                MultiSelectAction::MoveColumnLeft => state.compositor().move_column_left(window_id),
+                MultiSelectAction::MoveColumnRight => state.compositor().move_column_right(window_id),
+                MultiSelectAction::ToggleFloating => state.compositor().toggle_floating(window_id),
+                MultiSelectAction::FullscreenWindows => state.compositor().fullscreen_window(window_id),
+                MultiSelectAction::MaximizeColumns => state.compositor().maximize_window_column(window_id),
+                MultiSelectAction::CenterColumns => state.compositor().center_column(window_id),
+                MultiSelectAction::ConsumeIntoColumn => state.compositor().consume_window_into_column(window_id),
+                MultiSelectAction::ToggleTabbedDisplay => state.compositor().toggle_column_tabbed_display(window_id),
+            };
+            if let Err(e) = result {
+                tracing::warn!(%e, id = window_id, "multi-select action failed");
+            }
+        }
+    }
 
-	fn clone_for_menu(&self) -> Self {
-		Self {
-		    app_id: self.app_id.clone(),
-		    gtk_button: self.gtk_button.clone(),
-		    layout_box: self.layout_box.clone(),
-		    title_label: self.title_label.clone(),
-		    audio_event_box: self.audio_event_box.clone(),
-		    audio_label: self.audio_label.clone(),
-		    audio_sink_inputs: self.audio_sink_inputs.clone(),
-		    display_titles: self.display_titles,
-		    state: self.state.clone(),
-		    window_id: self.window_id,
-		    title: self.title.clone(),
-		    selection: self.selection.clone(),
-		    tooltip_timeout: self.tooltip_timeout.clone(),
-		    skip_clicked: self.skip_clicked.clone(),
-		}
-	}
+    fn clone_for_menu(&self) -> Self {
+        Self {
+            app_id: self.app_id.clone(),
+            gtk_button: self.gtk_button.clone(),
+            layout_box: self.layout_box.clone(),
+            title_label: self.title_label.clone(),
+            audio_event_box: self.audio_event_box.clone(),
+            audio_label: self.audio_label.clone(),
+            audio_sink_inputs: self.audio_sink_inputs.clone(),
+            display_titles: self.display_titles,
+            state: self.state.clone(),
+            window_id: self.window_id,
+            title: self.title.clone(),
+            selection: self.selection.clone(),
+            tooltip_timeout: self.tooltip_timeout.clone(),
+            skip_clicked: self.skip_clicked.clone(),
+        }
+    }
 
     fn setup_drag_reorder(&self) {
         tracing::info!("configuring drag-drop for window {}", self.window_id);
@@ -880,7 +880,6 @@ impl WindowButton {
 
         let state_for_drop = self.state.clone();
         let pos_for_drop = initial_position.clone();
-        let settings_for_drop = self.state.settings().clone();
         self.gtk_button.connect_drag_drop(move |widget, ctx, _x, _y, time| {
             if let Some(timeout_id) = timeout_for_drop.borrow_mut().take() {
                 timeout_id.remove();
@@ -912,7 +911,7 @@ impl WindowButton {
                                 let end_pos = container.child_position(&source);
                                 let delta = end_pos - start_pos;
 
-                                let keep_stacked = Self::check_modifier_static(settings_for_drop.multi_select_modifier());
+                                let keep_stacked = Self::check_modifier_static(state.settings().multi_select_modifier());
                                 tracing::info!("position change: {} -> {} (delta: {}, keep_stacked: {})", start_pos, end_pos, delta, keep_stacked);
 
                                 match state.compositor().reposition_window(dragged_window_id, delta, keep_stacked) {
@@ -1059,16 +1058,16 @@ impl WindowButton {
         });
     }
 
-	pub fn resize_for_width(&self, width: i32) {
-		if self.display_titles && self.state.settings().truncate_titles() {
-		    let icon_dim = self.state.settings().icon_size();
-		    let icon_gap = self.state.settings().icon_spacing();
-		    let max_chars = ((width - icon_dim - icon_gap - 16) / 8).max(0);
-		    self.title_label.set_max_width_chars(max_chars);
+    pub fn resize_for_width(&self, width: i32) {
+        if self.display_titles && self.state.settings().truncate_titles() {
+            let icon_dim = self.state.settings().icon_size();
+            let icon_gap = self.state.settings().icon_spacing();
+            let max_chars = ((width - icon_dim - icon_gap - 16) / 8).max(0);
+            self.title_label.set_max_width_chars(max_chars);
 
-		    if max_chars == 0 {
-		        self.title_label.hide();
-		    }
-		}
-	}
+            if max_chars == 0 {
+                self.title_label.hide();
+            }
+        }
+    }
 }

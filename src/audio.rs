@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, mem, rc::Rc};
+use std::{cell::{Cell, RefCell}, collections::HashMap, mem, rc::Rc, time::Duration};
 use async_channel::Sender;
 use futures::Stream;
 use libpulse_binding::{
@@ -23,6 +23,7 @@ pub type AudioState = HashMap<u32, Vec<SinkInput>>;
 thread_local! {
     static PA_MAINLOOP: RefCell<Option<Mainloop>> = RefCell::new(None);
     static PA_CONTEXT: RefCell<Option<Context>> = RefCell::new(None);
+    static PA_RECONNECT_BACKOFF: Cell<u64> = const { Cell::new(1) };
 }
 
 pub fn create_stream() -> impl Stream<Item = AudioState> {
@@ -48,11 +49,28 @@ pub fn toggle_mute(sink_inputs: &[(u32, bool)]) {
     });
 }
 
+fn schedule_reconnect(tx: Sender<AudioState>) {
+    PA_CONTEXT.with(|ctx| { ctx.borrow_mut().take(); });
+    PA_MAINLOOP.with(|ml| { ml.borrow_mut().take(); });
+
+    let backoff = PA_RECONNECT_BACKOFF.with(|b| {
+        let current = b.get();
+        b.set((current * 2).min(30));
+        current
+    });
+
+    tracing::warn!(backoff, "scheduling PulseAudio reconnect");
+    glib::timeout_add_local_once(Duration::from_secs(backoff), move || {
+        setup_pulse_audio(tx);
+    });
+}
+
 fn setup_pulse_audio(tx: Sender<AudioState>) {
     let mainloop = match Mainloop::new(None) {
         Some(m) => m,
         None => {
             tracing::error!("failed to create PulseAudio GLib mainloop");
+            schedule_reconnect(tx);
             return;
         }
     };
@@ -61,20 +79,26 @@ fn setup_pulse_audio(tx: Sender<AudioState>) {
         Some(c) => c,
         None => {
             tracing::error!("failed to create PulseAudio context");
+            schedule_reconnect(tx);
             return;
         }
     };
 
     let tx_state = tx.clone();
+    let tx_reconnect = tx.clone();
     context.set_state_callback(Some(Box::new(move || {
         let state = PA_CONTEXT.with(|ctx| ctx.borrow().as_ref().map(|c| c.get_state()));
         match state {
             Some(State::Ready) => {
+                PA_RECONNECT_BACKOFF.with(|b| b.set(1));
                 on_context_ready(tx_state.clone());
             }
             Some(State::Failed) | Some(State::Terminated) => {
                 tracing::error!("PulseAudio context disconnected");
-                let _ = tx_state.try_send(HashMap::new());
+                let _ = tx_reconnect.try_send(HashMap::new());
+                let tx = tx_reconnect.clone();
+                // Defer cleanup so we don't drop the context mid-callback
+                glib::idle_add_local_once(move || schedule_reconnect(tx));
             }
             _ => {}
         }
@@ -82,6 +106,8 @@ fn setup_pulse_audio(tx: Sender<AudioState>) {
 
     if let Err(e) = context.connect(None, FlagSet::NOFLAGS, None) {
         tracing::error!("failed to connect to PulseAudio: {:?}", e);
+        context.set_state_callback(None);
+        schedule_reconnect(tx);
         return;
     }
 

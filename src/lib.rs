@@ -541,8 +541,8 @@ impl ModuleInstance {
                 max_width
             }.max(1);
 
-            if let Some(pid) = window.pid {
-                self.window_pids.insert(window.id, pid as u32);
+            if let Some(pid) = window.pid.and_then(|p| u32::try_from(p).ok()) {
+                self.window_pids.insert(window.id, pid);
             }
 
             let button = self.buttons.entry(window.id).or_insert_with(|| {

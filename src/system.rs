@@ -26,9 +26,15 @@ impl ProcessInfo {
             .await
             .map_err(|e| ProcessError::FileRead { e, pid })?;
 
-        let ppid_str = content
-            .split(' ')
-            .nth(3)
+        let after_comm = content
+            .rfind(')')
+            .map(|i| &content[i + 1..])
+            .ok_or_else(|| ProcessError::MalformedStat { pid })?;
+
+        // Fields after "(comm)": state ppid pgrp session ...
+        let ppid_str = after_comm
+            .split_whitespace()
+            .nth(1)
             .ok_or_else(|| ProcessError::MalformedStat { pid })?;
 
         let ppid = ppid_str
