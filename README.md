@@ -42,25 +42,52 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
 
 ## Configuration
 
-### Basic Example
+### Example
 
 ```jsonc
 {
   "modules-left": ["cffi/niri_window_buttons"],
   "cffi/niri_window_buttons": {
     "module_path": "/path/to/libniri_window_buttons.so",
-    "only_current_workspace": false,
+
+    // Display
+    "only_current_workspace": true,
     "show_window_titles": true,
     "truncate_titles": true,
     "allow_title_linebreaks": false,
     "button_alignment": "left",
-    "icon_size": 24,
+    "show_tooltip": true,
+    "tooltip_delay": 200,
+
+    // Sizing
+    "icon_size": 18,
     "icon_spacing": 6,
-    "min_button_width": 150,
-    "max_button_width": 235,
-    "max_taskbar_width": 1200,
+    "min_button_width": 10,
+    "max_button_width": 190,
+    "max_taskbar_width": 1210,
+    "scroll_arrow_left": "",
+    "scroll_arrow_right": "",
+
+    // Per-output overrides
+    "max_taskbar_width_per_output": {
+      "DP-1": 1400,
+      "eDP-1": 800
+    },
+    "dimensions_per_output": {
+      "eDP-1": {
+        "min_button_width": 10,
+        "max_button_width": 150,
+        "max_taskbar_width": 600
+      }
+    },
+
+    // Drag reorder
+    "drag_style": "browser",
+    "left_click_focus_on_press": true,
     "drag_hover_focus": true,
     "drag_hover_focus_delay": 500,
+
+    // Click actions
     "click_actions": {
       "left_click_unfocused": "focus-window",
       "left_click_focused": "maximize-column",
@@ -69,34 +96,70 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
       "right_click_focused": "menu",
       "middle_click_unfocused": "close-window",
       "middle_click_focused": "close-window",
-      "scroll_up": "none",
-      "scroll_down": "none"
+      "scroll_up": "move-column-left",
+      "scroll_down": "move-column-right"
     },
+
+    // Context menu
     "context_menu": [
       {"label": "  Maximize Column", "action": "maximize-column"},
       {"label": "  Maximize to Edges", "action": "maximize-window-to-edges"},
+      {"label": "  Center Column", "action": "center-window"},
       {"label": "󰉩  Toggle Floating", "action": "toggle-window-floating"},
+      {"label": "  Move WS Up", "action": "move-window-to-workspace-up"},
+      {"label": "  Move WS Down", "action": "move-window-to-workspace-down"},
+      {"label": "  Run Script", "command": "notify-send '{app_id}'"},
       {"label": "  Close Window", "action": "close-window"}
     ],
-    "multi_select_modifier": "ctrl",
+
+    // Multi-select
+    "multi_select_modifier": "shift",
     "multi_select_menu": [
       {"label": "  Move All Up", "action": "move-to-workspace-up"},
       {"label": "  Move All Down", "action": "move-to-workspace-down"},
+      {"label": "  Maximize All", "action": "maximize-columns"},
       {"label": "  Close All", "action": "close-windows"}
     ],
-    "ignore_rules": [],
+
+    // Filtering
+    "ignore_rules": [
+      {"app_id": "xpad"},
+      {"app_id": "launcher"},
+      {"title_contains": "Picture-in-Picture"},
+      {"app_id": "firefox", "title_regex": "^Extension:"}
+    ],
+
+    // Notifications
     "notifications": {
       "enabled": true,
       "use_desktop_entry": true,
-      "use_fuzzy_matching": false
+      "use_fuzzy_matching": true,
+      "map_app_ids": {
+        "org.mozilla.firefox": "firefox"
+      }
     },
+
+    // Audio indicator
     "audio_indicator": {
-      "enabled": false,
+      "enabled": true,
       "playing_icon": "󰕾",
       "muted_icon": "󰖁",
       "clickable": true
     },
-    "apps": {}
+
+    // Per-app CSS classes and click overrides
+    "apps": {
+      "signal": [
+        {"match": "\\([0-9]+\\)$", "class": "unread"}
+      ],
+      "firefox": [
+        {"match": ".*YouTube.*", "class": "youtube"},
+        {"match": ".*", "click_actions": {
+          "middle_click_unfocused": "none",
+          "middle_click_focused": "none"
+        }}
+      ]
+    }
   }
 }
 ```
@@ -110,12 +173,13 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
 | `show_window_titles` | Display window titles next to icons | `true` |
 | `truncate_titles` | Truncate long titles with ellipsis | `true` |
 | `allow_title_linebreaks` | Allow line breaks in window titles (expands button height) | `false` |
+| `drag_style` | Drag reorder style: `"browser"` (grabbed button follows cursor) or `"classic"` (GTK drag-and-drop) | `"browser"` |
 | `drag_hover_focus` | Focus window when external drag hovers over button | `true` |
 | `drag_hover_focus_delay` | Delay in milliseconds before hover triggers focus | `500` |
 | `show_tooltip` | Show window title tooltip on hover | `true` |
 | `tooltip_delay` | Delay in milliseconds before tooltip appears | `300` |
 | `button_alignment` | Align buttons within the taskbar: `"left"`, `"center"`, or `"right"` | `"left"` |
-| `left_click_focus_on_press` | Focus unfocused windows on mouse-down instead of mouse-up. Faster response but may briefly focus a window before drag-and-drop starts | `false` |
+| `left_click_focus_on_press` | Focus unfocused windows on mouse-down instead of mouse-up. When `false`, dragging an unfocused window reorders it without stealing focus | `false` |
 
 ### Size Controls
 
@@ -287,13 +351,19 @@ Select multiple windows using a modifier key, then perform batch actions via rig
     {"label": "  Move All Down", "action": "move-to-workspace-down"},
     {"label": "󰉩  Float All", "action": "toggle-floating"},
     {"label": "  Fullscreen All", "action": "fullscreen-windows"},
-    {"label": "󱆃  Custom Script", "command": "my-script.sh {window_ids}"}
-    {"label": "  Close All", "action": "close-windows"},
+    {"label": "󱆃  Custom Script", "command": "my-script.sh {window_ids}"},
+    {"label": "  Close All", "action": "close-windows"}
   ]
 }
 ```
 
 **Modifier options:** `ctrl`, `shift`, `alt`, `super`
+
+**Requirements:** User must be in the `input` group for modifier key detection on Wayland:
+```bash
+sudo usermod -aG input $USER
+# Log out and back in for changes to take effect
+```
 
 **Multi-select actions:**
 
@@ -327,12 +397,6 @@ Select multiple windows using a modifier key, then perform batch actions via rig
 Note: Multi-select and modifier-drag are independent. Selecting stacked windows then modifier-dragging will move the column, not the selection. Use the right-click menu for batch actions on selections.
 
 Custom commands receive `{window_ids}` as a comma-separated list of window IDs.
-
-**Requirements:** User must be in the `input` group for modifier key detection on Wayland:
-```bash
-sudo usermod -aG input $USER
-# Log out and back in for changes to take effect
-```
 
 ### Per-App Configuration
 
@@ -468,8 +532,8 @@ Customize appearance using Waybar's GTK CSS. The module container uses class `.n
 | `.focused` | Currently focused window |
 | `.selected` | Multi-selected window |
 | `.urgent` | Window with pending notification |
-| `.dragging` | Window being dragged |
-| `.drag-over` | Valid drop target during drag |
+| `.dragging` | Window being dragged (classic drag style) |
+| `.drag-over` | Valid drop target during external drag |
 | `.audio-indicator` | Audio indicator icon inside each button |
 | Custom | Classes from `apps` configuration |
 

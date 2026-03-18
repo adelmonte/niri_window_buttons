@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-17
+
+### Added
+- Browser-style drag reorder: grabbed button follows the cursor while neighboring buttons reposition around it
+- `drag_style` setting to choose between `"browser"` (new default) and `"classic"` (original GTK drag-and-drop)
+- Audio indicator with click-to-mute for windows playing audio
+- `audio_indicator` configuration block (`enabled`, `playing_icon`, `muted_icon`, `clickable`)
+
+### Fixed
+- Click actions no longer fire after completing a drag reorder
+- Drag reorder no longer flickers when hovering near button boundaries
+- Audio reconnection after PulseAudio/PipeWire restart
+
+### Changed
+- Smoother drag reorder rendering (no layout recalculation during drag)
+
 ## [0.3.5] - 2026-02-20
 
 ### Added
@@ -58,12 +74,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `move-column-left-or-to-monitor-left` / `move-column-right-or-to-monitor-right`
 
 ### Changed
-- Multi-select now requires user to be in the `input` group for modifier key detection on Wayland
+- Modifier key detection no longer requires `input` group membership
 - Selection clears automatically when window focus changes
 - Click action config fields renamed for clarity (e.g., `right_click` split into `right_click_focused`/`right_click_unfocused`)
 
 ### Fixed
-- Modifier key detection on Wayland layer-shell surfaces via evdev
+- Modifier key detection on Wayland layer-shell surfaces
 
 ## [0.2.0] - 2025-12-02
 

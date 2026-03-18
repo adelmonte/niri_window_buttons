@@ -53,6 +53,8 @@ pub struct Settings {
     multi_select_modifier: ModifierKey,
     #[serde(default = "default_multi_select_menu")]
     multi_select_menu: Vec<MultiSelectMenuItem>,
+    #[serde(default)]
+    drag_style: DragStyle,
     #[serde(default = "default_true")]
     drag_hover_focus: bool,
     #[serde(default = "default_drag_hover_delay")]
@@ -104,6 +106,14 @@ impl Default for AudioIndicatorConfig {
             clickable: true,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DragStyle {
+    #[default]
+    Browser,
+    Classic,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Default)]
@@ -518,6 +528,10 @@ impl Settings {
 
     pub fn multi_select_menu(&self) -> &[MultiSelectMenuItem] {
         &self.multi_select_menu
+    }
+
+    pub fn drag_style(&self) -> DragStyle {
+        self.drag_style
     }
 
     pub fn drag_hover_focus(&self) -> bool {

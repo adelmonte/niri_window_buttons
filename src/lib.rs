@@ -8,7 +8,7 @@ use settings::{Settings, ButtonAlignment};
 use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan};
 use waybar_cffi::{
     Module,
-    gtk::{self, Orientation, ReliefStyle, ScrolledWindow, gio, glib::MainContext, traits::{AdjustmentExt, BoxExt, ButtonExt, ContainerExt, ScrolledWindowExt, StyleContextExt, WidgetExt}, gdk::EventMask, prelude::WidgetExtManual},
+    gtk::{self, Orientation, Overlay, ReliefStyle, ScrolledWindow, gio, glib::MainContext, traits::{AdjustmentExt, BoxExt, ButtonExt, ContainerExt, ScrolledWindowExt, StyleContextExt, WidgetExt}, gdk::EventMask, prelude::WidgetExtManual},
     waybar_module,
 };
 
@@ -93,7 +93,9 @@ async fn initialize_module(info: &waybar_cffi::InitInfo, state: SharedState) -> 
     alignment_spacer.set_size_request(0, 0);
     button_container.add(&alignment_spacer);
 
-    scrolled.add(&button_container);
+    let drag_overlay = Overlay::new();
+    drag_overlay.add(&button_container);
+    scrolled.add(&drag_overlay);
 
     set_taskbar_adjustment(scrolled.hadjustment());
 
@@ -205,7 +207,7 @@ async fn initialize_module(info: &waybar_cffi::InitInfo, state: SharedState) -> 
     let context = MainContext::default();
     let main_container_clone = main_container.clone();
     context.spawn_local(async move {
-        ModuleInstance::create(state, button_container, scrolled, main_container_clone, alignment_spacer).run_event_loop().await
+        ModuleInstance::create(state, button_container, drag_overlay, scrolled, main_container_clone, alignment_spacer).run_event_loop().await
     });
 
     Ok(())
@@ -249,6 +251,7 @@ fn ease_out_cubic(t: f64) -> f64 {
 struct ModuleInstance {
     buttons: BTreeMap<u64, WindowButton>,
     container: gtk::Box,
+    drag_overlay: Overlay,
     scrolled_window: ScrolledWindow,
     main_container: gtk::Box,
     alignment_spacer: gtk::Box,
@@ -262,10 +265,11 @@ struct ModuleInstance {
 }
 
 impl ModuleInstance {
-    fn create(state: SharedState, container: gtk::Box, scrolled_window: ScrolledWindow, main_container: gtk::Box, alignment_spacer: gtk::Box) -> Self {
+    fn create(state: SharedState, container: gtk::Box, drag_overlay: Overlay, scrolled_window: ScrolledWindow, main_container: gtk::Box, alignment_spacer: gtk::Box) -> Self {
         Self {
             buttons: BTreeMap::new(),
             container,
+            drag_overlay,
             scrolled_window,
             main_container,
             alignment_spacer,
@@ -547,7 +551,7 @@ impl ModuleInstance {
 
             let button = self.buttons.entry(window.id).or_insert_with(|| {
                 new_button_added = true;
-                let btn = WindowButton::create(&self.state, window, self.selection.clone());
+                let btn = WindowButton::create(&self.state, window, self.selection.clone(), self.drag_overlay.clone());
                 btn.get_widget().set_size_request(initial_width, -1);
                 self.container.add(btn.get_widget());
                 btn

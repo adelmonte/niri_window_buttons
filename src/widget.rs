@@ -1,13 +1,13 @@
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, path::PathBuf, process::Command, rc::Rc, time::{Duration, Instant}};
+use std::{cell::{Cell, RefCell}, collections::HashMap, fmt::Debug, path::PathBuf, process::Command, rc::Rc, time::{Duration, Instant}};
 use waybar_cffi::gtk::{
     self as gtk, CssProvider, EventBox, IconLookupFlags, IconSize, IconTheme, Menu, MenuItem, Orientation, ReliefStyle,
     gdk_pixbuf::Pixbuf,
-    prelude::{AdjustmentExt, BoxExt, ButtonExt, Cast, ContainerExt, CssProviderExt, DragContextExtManual, GdkPixbufExt, GtkMenuExt, GtkMenuItemExt, IconThemeExt, LabelExt, MenuShellExt, StyleContextExt, WidgetExt, WidgetExtManual},
+    prelude::{AdjustmentExt, BoxExt, ButtonExt, Cast, ContainerExt, CssProviderExt, DragContextExtManual, GdkPixbufExt, GtkMenuExt, GtkMenuItemExt, IconThemeExt, LabelExt, MenuShellExt, OverlayExt, StyleContextExt, WidgetExt, WidgetExtManual},
     DestDefaults, TargetEntry, TargetFlags,
 };
 use crate::audio::SinkInput;
 use crate::global::SharedState;
-use crate::settings::{ModifierKey, MultiSelectAction};
+use crate::settings::{DragStyle, ModifierKey, MultiSelectAction};
 
 pub type SelectionState = Rc<RefCell<HashMap<u64, gtk::Button>>>;
 
@@ -37,6 +37,7 @@ pub struct WindowButton {
     selection: SelectionState,
     tooltip_timeout: Rc<RefCell<Option<gtk::glib::SourceId>>>,
     skip_clicked: Rc<RefCell<bool>>,
+    overlay: gtk::Overlay,
 }
 
 impl Debug for WindowButton {
@@ -80,9 +81,10 @@ fn scroll_taskbar(delta: f64) {
     });
 }
 
+
 impl WindowButton {
     #[tracing::instrument(level = "TRACE", fields(app_id = &window.app_id))]
-    pub fn create(state: &SharedState, window: &niri_ipc::Window, selection: SelectionState) -> Self {
+    pub fn create(state: &SharedState, window: &niri_ipc::Window, selection: SelectionState, overlay: gtk::Overlay) -> Self {
         let state_clone = state.clone();
         let display_titles = state.settings().show_window_titles();
 
@@ -152,6 +154,7 @@ impl WindowButton {
             selection,
             tooltip_timeout: Rc::new(RefCell::new(None)),
             skip_clicked: Rc::new(RefCell::new(false)),
+            overlay,
         };
 
         button.setup_click_handlers(window.id);
@@ -314,9 +317,9 @@ impl WindowButton {
         let selection_press = self.selection.clone();
         let menu_self = self.clone_for_menu();
 
-        self.gtk_button.connect_button_press_event(move |btn, event| {
+        self.gtk_button.connect_button_press_event(move |_btn, event| {
             if event.button() == 1 {
-                let modifier_held = Self::check_modifier(btn, state_press.settings().multi_select_modifier());
+                let modifier_held = Self::check_modifier_static(state_press.settings().multi_select_modifier());
                 if modifier_held {
                     *skip_clicked_press.borrow_mut() = true;
                     let mut sel = selection_press.borrow_mut();
@@ -649,10 +652,6 @@ impl WindowButton {
         });
     }
 
-    fn check_modifier(_button: &gtk::Button, modifier: ModifierKey) -> bool {
-        Self::check_modifier_static(modifier)
-    }
-
     fn check_modifier_static(modifier: ModifierKey) -> bool {
         use evdev::Key;
 
@@ -663,7 +662,7 @@ impl WindowButton {
             ModifierKey::Super => &[Key::KEY_LEFTMETA, Key::KEY_RIGHTMETA],
         };
 
-        let result = evdev::enumerate()
+        evdev::enumerate()
             .filter_map(|(_, device)| {
                 if device.supported_keys().map_or(false, |keys| keys.contains(Key::KEY_LEFTCTRL)) {
                     Some(device)
@@ -677,9 +676,7 @@ impl WindowButton {
                 } else {
                     false
                 }
-            });
-
-        result
+            })
     }
 
     fn display_multi_select_menu(&self) {
@@ -759,12 +756,245 @@ impl WindowButton {
             selection: self.selection.clone(),
             tooltip_timeout: self.tooltip_timeout.clone(),
             skip_clicked: self.skip_clicked.clone(),
+            overlay: self.overlay.clone(),
         }
     }
 
     fn setup_drag_reorder(&self) {
-        tracing::info!("configuring drag-drop for window {}", self.window_id);
+        match self.state.settings().drag_style() {
+            DragStyle::Browser => self.setup_drag_reorder_browser(),
+            DragStyle::Classic => self.setup_drag_reorder_classic(),
+        }
+    }
 
+    fn setup_drag_reorder_browser(&self) {
+        self.gtk_button.add_events(gtk::gdk::EventMask::BUTTON1_MOTION_MASK);
+
+        let ext_targets = vec![
+            TargetEntry::new("text/uri-list", TargetFlags::OTHER_APP, 1),
+            TargetEntry::new("text/plain", TargetFlags::OTHER_APP, 2),
+        ];
+        self.gtk_button.drag_dest_set(
+            DestDefaults::MOTION | DestDefaults::HIGHLIGHT,
+            &ext_targets,
+            gtk::gdk::DragAction::COPY,
+        );
+
+        let drag_start: Rc<RefCell<Option<(f64, i32)>>> = Rc::new(RefCell::new(None));
+        let is_dragging: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
+        let committed_offset: Rc<Cell<i32>> = Rc::new(Cell::new(0));
+        let ghost_pos: Rc<Cell<f64>> = Rc::new(Cell::new(0.0));
+        let ghost_surface: Rc<RefCell<Option<gtk::cairo::ImageSurface>>> = Rc::new(RefCell::new(None));
+        let ghost_drawing: Rc<RefCell<Option<gtk::DrawingArea>>> = Rc::new(RefCell::new(None));
+
+        let window_id = self.window_id;
+        let state = self.state.clone();
+        let overlay = self.overlay.clone();
+        let skip = self.skip_clicked.clone();
+        let drag_start_press = drag_start.clone();
+        let skip_for_press = skip.clone();
+        self.gtk_button.connect_button_press_event(move |btn, event| {
+            if event.button() == 1 && !*skip_for_press.borrow() {
+                if let Some(parent) = btn.parent() {
+                    if let Ok(container) = parent.downcast::<gtk::Box>() {
+                        let (ex, _) = event.position();
+                        if let Some((cx, _)) = btn.translate_coordinates(&container, ex as i32, 0) {
+                            *drag_start_press.borrow_mut() = Some((cx as f64, container.child_position(btn)));
+                        }
+                    }
+                }
+            }
+            gtk::glib::Propagation::Proceed
+        });
+
+        let drag_start_motion = drag_start.clone();
+        let is_dragging_motion = is_dragging.clone();
+        let committed_offset_motion = committed_offset.clone();
+        let ghost_pos_motion = ghost_pos.clone();
+        let ghost_surface_motion = ghost_surface.clone();
+        let ghost_drawing_motion = ghost_drawing.clone();
+        let overlay_motion = overlay.clone();
+        let skip_motion = skip.clone();
+        self.gtk_button.connect_motion_notify_event(move |btn, event| {
+            let Some(parent) = btn.parent() else { return gtk::glib::Propagation::Proceed; };
+            let Ok(container) = parent.downcast::<gtk::Box>() else { return gtk::glib::Propagation::Proceed; };
+            let (ex, _) = event.position();
+            let Some((cx, _)) = btn.translate_coordinates(&container, ex as i32, 0) else {
+                return gtk::glib::Propagation::Proceed;
+            };
+            let cx = cx as f64;
+
+            if !*is_dragging_motion.borrow() {
+                if let Some((press_cx, _)) = *drag_start_motion.borrow() {
+                    if (cx - press_cx).abs() > 5.0 {
+                        *is_dragging_motion.borrow_mut() = true;
+                        *skip_motion.borrow_mut() = true;
+
+                        let alloc = btn.allocation();
+                        let scale = btn.scale_factor();
+                        if let Ok(surface) = gtk::cairo::ImageSurface::create(
+                            gtk::cairo::Format::ARgb32,
+                            alloc.width() * scale,
+                            alloc.height() * scale,
+                        ) {
+                            surface.set_device_scale(scale as f64, scale as f64);
+                            if let Ok(cr) = gtk::cairo::Context::new(&surface) {
+                                btn.draw(&cr);
+                            }
+                            *ghost_surface_motion.borrow_mut() = Some(surface);
+                        }
+
+                        let da = gtk::DrawingArea::new();
+                        da.set_halign(gtk::Align::Fill);
+                        da.set_valign(gtk::Align::Fill);
+                        let gpos = ghost_pos_motion.clone();
+                        let gsrf = ghost_surface_motion.clone();
+                        da.connect_draw(move |_, cr| {
+                            if let Some(ref surface) = *gsrf.borrow() {
+                                let _ = cr.set_source_surface(surface, gpos.get(), 0.0);
+                                let _ = cr.paint();
+                            }
+                            gtk::glib::Propagation::Proceed
+                        });
+
+                        overlay_motion.add_overlay(&da);
+                        overlay_motion.set_overlay_pass_through(&da, true);
+                        da.show();
+                        *ghost_drawing_motion.borrow_mut() = Some(da);
+
+                        btn.set_opacity(0.0);
+                    }
+                }
+            }
+
+            if *is_dragging_motion.borrow() {
+                if let Some((press_cx, start_slot)) = *drag_start_motion.borrow() {
+                    let btn_w = btn.allocation().width() as f64;
+                    if btn_w == 0.0 { return gtk::glib::Propagation::Proceed; }
+
+                    let displacement = cx - press_cx;
+
+                    let ghost_x = (cx - btn_w / 2.0).max(0.0);
+                    ghost_pos_motion.set(ghost_x);
+                    if let Some(da) = ghost_drawing_motion.borrow().as_ref() {
+                        da.queue_draw();
+                    }
+
+                    let raw_offset = displacement / btn_w;
+                    let current = committed_offset_motion.get();
+                    let hysteresis = 5.0 / btn_w;
+                    let slot_offset = if raw_offset > current as f64 + 0.5 {
+                        (raw_offset + 0.5).floor() as i32
+                    } else if raw_offset < current as f64 - 0.5 {
+                        (raw_offset - 0.5).ceil() as i32
+                    } else {
+                        current
+                    };
+
+                    if slot_offset != current {
+                        let threshold = if slot_offset > current {
+                            current as f64 + 0.5 + hysteresis
+                        } else {
+                            current as f64 - 0.5 - hysteresis
+                        };
+                        let crossed = if slot_offset > current {
+                            raw_offset >= threshold
+                        } else {
+                            raw_offset <= threshold
+                        };
+
+                        if crossed {
+                            committed_offset_motion.set(slot_offset);
+                            let n = container.children().len() as i32;
+                            let target_slot = (start_slot + slot_offset).clamp(1, n - 1);
+                            let current_pos = container.child_position(btn);
+                            if current_pos != target_slot {
+                                container.reorder_child(btn, target_slot);
+                            }
+                        }
+                    }
+                }
+            }
+
+            gtk::glib::Propagation::Proceed
+        });
+
+        let drag_start_release = drag_start.clone();
+        let is_dragging_release = is_dragging.clone();
+        let ghost_drawing_release = ghost_drawing.clone();
+        let ghost_surface_release = ghost_surface.clone();
+        let overlay_release = overlay.clone();
+        self.gtk_button.connect_button_release_event(move |btn, event| {
+            if event.button() == 1 {
+                let was_dragging = *is_dragging_release.borrow();
+                *is_dragging_release.borrow_mut() = false;
+
+                if was_dragging {
+                    if let Some(da) = ghost_drawing_release.borrow_mut().take() {
+                        overlay_release.remove(&da);
+                    }
+                    ghost_surface_release.borrow_mut().take();
+
+                    btn.set_opacity(1.0);
+
+                    if let Some(container) = btn.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) {
+                        if let Some((_, start_slot)) = *drag_start_release.borrow() {
+                            let final_slot = container.child_position(btn);
+                            let delta = final_slot - start_slot;
+                            if delta != 0 {
+                                let keep_stacked = Self::check_modifier_static(state.settings().multi_select_modifier());
+                                if let Err(e) = state.compositor().reposition_window(window_id, delta, keep_stacked) {
+                                    tracing::error!("reposition failed: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                *drag_start_release.borrow_mut() = None;
+            }
+            gtk::glib::Propagation::Proceed
+        });
+
+        let hover_timeout: Rc<RefCell<Option<gtk::glib::SourceId>>> = Rc::new(RefCell::new(None));
+        let timeout_leave = hover_timeout.clone();
+        let state_motion = self.state.clone();
+        let button_motion = self.gtk_button.clone();
+        let window_id_motion = self.window_id;
+        let timeout_motion = hover_timeout.clone();
+
+        self.gtk_button.connect_drag_motion(move |_, ctx, _, _, _| {
+            if ctx.drag_get_source_widget().is_some() { return true; }
+            if state_motion.settings().drag_hover_focus() && timeout_motion.borrow().is_none() {
+                button_motion.style_context().add_class("drag-over");
+                let state = state_motion.clone();
+                let wid = window_id_motion;
+                let delay = state_motion.settings().drag_hover_focus_delay();
+                let timeout_ref = timeout_motion.clone();
+                let source_id = gtk::glib::timeout_add_local_once(
+                    Duration::from_millis(delay as u64),
+                    move || {
+                        if let Err(e) = state.compositor().focus_window(wid) {
+                            tracing::error!("drag hover focus failed: {}", e);
+                        }
+                        timeout_ref.borrow_mut().take();
+                    }
+                );
+                *timeout_motion.borrow_mut() = Some(source_id);
+            }
+            true
+        });
+
+        let button_leave = self.gtk_button.clone();
+        self.gtk_button.connect_drag_leave(move |_, _, _| {
+            button_leave.style_context().remove_class("drag-over");
+            if let Some(id) = timeout_leave.borrow_mut().take() {
+                id.remove();
+            }
+        });
+    }
+
+    fn setup_drag_reorder_classic(&self) {
         let internal_targets = vec![TargetEntry::new("text/plain", TargetFlags::SAME_APP, 0)];
 
         self.gtk_button.drag_source_set(
@@ -789,16 +1019,11 @@ impl WindowButton {
         let pos_for_begin = initial_position.clone();
 
         self.gtk_button.connect_drag_begin(move |widget, _| {
-            tracing::info!("drag initiated");
-
             if let Some(parent) = widget.parent() {
                 if let Ok(container) = parent.downcast::<gtk::Box>() {
-                    let position = container.child_position(widget);
-                    *pos_for_begin.borrow_mut() = position;
-                    tracing::info!("stored initial position: {}", position);
+                    *pos_for_begin.borrow_mut() = container.child_position(widget);
                 }
             }
-
             widget.style_context().add_class("dragging");
         });
 
@@ -810,7 +1035,6 @@ impl WindowButton {
         let button_for_end = self.gtk_button.clone();
         let skip_clicked_drag = self.skip_clicked.clone();
         self.gtk_button.connect_drag_end(move |_, _| {
-            tracing::info!("drag completed");
             button_for_end.style_context().remove_class("dragging");
             *skip_clicked_drag.borrow_mut() = false;
         });
@@ -838,7 +1062,6 @@ impl WindowButton {
                     let source_id = gtk::glib::timeout_add_local_once(
                         Duration::from_millis(delay as u64),
                         move || {
-                            tracing::debug!("drag hover focus triggered for window {}", wid);
                             if let Err(e) = state.compositor().focus_window(wid) {
                                 tracing::error!("failed to focus window on drag hover: {}", e);
                             }
@@ -860,7 +1083,6 @@ impl WindowButton {
 
                             if source_pos != target_pos {
                                 container.reorder_child(&source, target_pos);
-                                tracing::trace!("reordered from {} to {}", source_pos, target_pos);
                             }
                         }
                     }
@@ -900,8 +1122,6 @@ impl WindowButton {
 
         let state = state_for_drop;
         self.gtk_button.connect_drag_data_received(move |_widget, ctx, _, _, data, _, time| {
-            tracing::info!("drop received");
-
             if let Some(text) = data.text() {
                 if let Ok(dragged_window_id) = text.parse::<u64>() {
                     if let Some(source) = ctx.drag_get_source_widget() {
@@ -912,11 +1132,9 @@ impl WindowButton {
                                 let delta = end_pos - start_pos;
 
                                 let keep_stacked = Self::check_modifier_static(state.settings().multi_select_modifier());
-                                tracing::info!("position change: {} -> {} (delta: {}, keep_stacked: {})", start_pos, end_pos, delta, keep_stacked);
 
                                 match state.compositor().reposition_window(dragged_window_id, delta, keep_stacked) {
                                     Ok(()) => {
-                                        tracing::info!("reposition successful");
                                         ctx.drag_finish(true, false, time);
                                         return;
                                     }
