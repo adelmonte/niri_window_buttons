@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use async_channel::Sender;
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use waybar_cffi::gtk::glib;
 use crate::{
     audio,
@@ -41,7 +41,7 @@ impl SharedState {
         &self.0.compositor
     }
 
-    pub fn create_event_stream(&self) -> impl Stream<Item = EventMessage> {
+    pub fn create_event_stream(&self) -> async_channel::Receiver<EventMessage> {
         let (tx, rx) = async_channel::unbounded();
 
         if self.settings().notifications_enabled() {
@@ -55,18 +55,14 @@ impl SharedState {
         glib::spawn_future_local(forward_window_updates(tx.clone(), self.compositor().create_window_stream()));
         glib::spawn_future_local(forward_workspace_changes(tx, self.compositor().create_workspace_stream()));
 
-        async_stream::stream! {
-            while let Ok(event) = rx.recv().await {
-                yield event;
-            }
-        }
+        rx
     }
 }
 
 pub enum EventMessage {
     Notification(Box<NotificationData>),
     WindowUpdate(WindowSnapshot),
-    Workspaces(()),
+    Workspaces,
     AudioUpdate(audio::AudioState),
 }
 
@@ -98,7 +94,7 @@ async fn forward_window_updates(tx: Sender<EventMessage>, stream: crate::composi
 
 async fn forward_workspace_changes(tx: Sender<EventMessage>, stream: WorkspaceEventStream) {
     while stream.next_workspaces().await.is_some() {
-        if let Err(e) = tx.send(EventMessage::Workspaces(())).await {
+        if let Err(e) = tx.send(EventMessage::Workspaces).await {
             tracing::error!(%e, "failed to forward workspace change");
         }
     }

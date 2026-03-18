@@ -49,7 +49,7 @@ pub struct Settings {
     ignore_rules: Vec<IgnoreRule>,
     #[serde(default = "default_context_menu")]
     context_menu: Vec<ContextMenuItem>,
-    #[serde(default = "default_modifier")]
+    #[serde(default)]
     multi_select_modifier: ModifierKey,
     #[serde(default = "default_multi_select_menu")]
     multi_select_menu: Vec<MultiSelectMenuItem>,
@@ -336,7 +336,6 @@ fn default_double_click() -> ClickAction { ClickAction::Action(WindowAction::Max
 fn default_right_click() -> ClickAction { ClickAction::Action(WindowAction::Menu) }
 fn default_middle_click() -> ClickAction { ClickAction::Action(WindowAction::CloseWindow) }
 
-fn default_modifier() -> ModifierKey { ModifierKey::Ctrl }
 fn default_drag_hover_delay() -> u32 { 500 }
 fn default_tooltip_delay() -> u32 { 300 }
 fn default_audio_playing_icon() -> String { "󰕾".to_string() }

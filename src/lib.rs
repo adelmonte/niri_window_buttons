@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    sync::{Arc, LazyLock, Mutex},
+    sync::LazyLock,
 };
 
 use futures::StreamExt;
@@ -258,6 +258,7 @@ struct ModuleInstance {
     previous_snapshot: Option<WindowSnapshot>,
     current_output: Option<String>,
     previous_focused: Option<u64>,
+    display_filter: screen::DisplayFilter,
     state: SharedState,
     selection: SelectionState,
     audio_state: AudioState,
@@ -276,6 +277,7 @@ impl ModuleInstance {
             previous_snapshot: None,
             current_output: None,
             previous_focused: None,
+            display_filter: screen::DisplayFilter::ShowAll,
             state,
             selection: create_selection_state(),
             audio_state: AudioState::new(),
@@ -284,7 +286,7 @@ impl ModuleInstance {
     }
 
     async fn run_event_loop(&mut self) {
-        let display_filter = Arc::new(Mutex::new(self.determine_display_filter().await));
+        self.display_filter = self.determine_display_filter().await;
 
         let mut event_stream = Box::pin(self.state.create_event_stream());
 
@@ -293,24 +295,17 @@ impl ModuleInstance {
                 EventMessage::Notification(notif) => self.handle_notification(notif).await,
                 EventMessage::AudioUpdate(state) => self.handle_audio_update(state),
                 EventMessage::WindowUpdate(snapshot) => {
-                    self.handle_window_update(snapshot, display_filter.clone()).await
+                    let filter = self.display_filter.clone();
+                    self.handle_window_update(snapshot, filter).await;
                 }
-                EventMessage::Workspaces(_) => {
+                EventMessage::Workspaces => {
                     let updated_filter = self.determine_display_filter().await;
-                    let filter_changed = {
-                        let Ok(mut filter_lock) = display_filter.lock() else {
-                            tracing::warn!("display filter lock poisoned");
-                            continue;
-                        };
-                        let changed = *filter_lock != updated_filter;
-                        *filter_lock = updated_filter;
-                        changed
-                    };
+                    let filter_changed = self.display_filter != updated_filter;
+                    self.display_filter = updated_filter;
 
                     if filter_changed && self.update_output_and_resize().await {
                         if let Some(snapshot) = self.previous_snapshot.clone() {
-                            let filter = Arc::new(Mutex::new(screen::DisplayFilter::ShowAll));
-                            self.handle_window_update(snapshot, filter).await;
+                            self.handle_window_update(snapshot, screen::DisplayFilter::ShowAll).await;
                         }
                     }
                 }
@@ -505,7 +500,7 @@ impl ModuleInstance {
     async fn handle_window_update(
         &mut self,
         snapshot: WindowSnapshot,
-        filter: Arc<Mutex<screen::DisplayFilter>>,
+        filter: screen::DisplayFilter,
     ) {
         self.update_output_and_resize().await;
 
@@ -520,30 +515,15 @@ impl ModuleInstance {
         let mut new_button_added = false;
 
         for window in snapshot.iter().filter(|w| {
-            let should_display = filter.lock()
-                .map(|f| f.should_display(w.get_output().unwrap_or_default()))
-                .unwrap_or(true);
-            if !should_display {
+            if !filter.should_display(w.get_output().unwrap_or_default()) {
                 return false;
             }
-            if let Some(_app_id) = &w.app_id {
-                if config.should_ignore(w.app_id.as_deref(), w.title.as_deref(), w.workspace_id) {
-                   return false;
-                }
+            if w.app_id.is_some() && config.should_ignore(w.app_id.as_deref(), w.title.as_deref(), w.workspace_id) {
+                return false;
             }
             true
         }) {
-            let button_count = (self.buttons.len() + 1) as i32;
-            let output = self.current_output.as_deref();
-            let min_width = self.state.settings().min_button_width(output);
-            let max_width = self.state.settings().max_button_width(output);
-            let total_limit = self.state.settings().max_taskbar_width_for_output(output);
-            
-            let initial_width = if max_width * button_count > total_limit {
-                (total_limit / button_count).max(min_width).max(1)
-            } else {
-                max_width
-            }.max(1);
+            let initial_width = self.calculate_button_width((self.buttons.len() + 1) as i32);
 
             if let Some(pid) = window.pid.and_then(|p| u32::try_from(p).ok()) {
                 self.window_pids.insert(window.id, pid);
@@ -596,16 +576,7 @@ impl ModuleInstance {
 
         if !self.buttons.is_empty() {
             let button_count = self.buttons.len() as i32;
-            let output = self.current_output.as_deref();
-            let min_width = self.state.settings().min_button_width(output);
-            let max_width = self.state.settings().max_button_width(output);
-            let total_limit = self.state.settings().max_taskbar_width_for_output(output);
-
-            let final_width = if max_width * button_count > total_limit {
-                (total_limit / button_count).max(min_width).max(1)
-            } else {
-                max_width
-            }.max(1);
+            let final_width = self.calculate_button_width(button_count);
 
             for button in self.buttons.values() {
                 button.get_widget().set_size_request(final_width, -1);
@@ -614,6 +585,7 @@ impl ModuleInstance {
 
             let total_buttons_width = final_width * button_count;
             let page_size = self.scrolled_window.hadjustment().page_size() as i32;
+            let total_limit = self.state.settings().max_taskbar_width_for_output(self.current_output.as_deref());
             let available_width = if page_size > 0 { page_size } else { total_limit };
             let spacer_width = match self.state.settings().button_alignment() {
                 ButtonAlignment::Left => 0,
@@ -638,6 +610,19 @@ impl ModuleInstance {
 
         self.previous_snapshot = Some(snapshot);
         self.update_button_audio_states();
+    }
+
+    fn calculate_button_width(&self, button_count: i32) -> i32 {
+        let output = self.current_output.as_deref();
+        let min_width = self.state.settings().min_button_width(output);
+        let max_width = self.state.settings().max_button_width(output);
+        let total_limit = self.state.settings().max_taskbar_width_for_output(output);
+
+        if max_width * button_count > total_limit {
+            (total_limit / button_count).max(min_width).max(1)
+        } else {
+            max_width
+        }
     }
 
     fn handle_audio_update(&mut self, state: AudioState) {

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, ops::Deref};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    ops::Deref,
+};
 use async_channel::{Receiver, Sender};
 use niri_ipc::{Action, Event, Output, Reply, Request, Workspace, socket::Socket};
 use crate::{errors::ModuleError, settings::Settings};
@@ -15,234 +18,178 @@ impl CompositorClient {
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn focus_window(&self, window_id: u64) -> Result<(), ModuleError> {
-        let response = send_request(Request::Action(Action::FocusWindow { id: window_id }))?;
-        validate_handled(response)
+        send_action(Action::FocusWindow { id: window_id })
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn close_window(&self, window_id: u64) -> Result<(), ModuleError> {
-        let response = send_request(Request::Action(Action::CloseWindow { id: Some(window_id) }))?;
-        validate_handled(response)
+        send_action(Action::CloseWindow { id: Some(window_id) })
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn maximize_window_column(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MaximizeColumn {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MaximizeColumn {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn maximize_window_to_edges(&self, window_id: u64) -> Result<(), ModuleError> {
         self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MaximizeWindowToEdges { id: Some(window_id) }))?;
-        validate_handled(response)
+        send_action(Action::MaximizeWindowToEdges { id: Some(window_id) })
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn center_column(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::CenterColumn {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::CenterColumn {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn fullscreen_window(&self, window_id: u64) -> Result<(), ModuleError> {
-        let response = send_request(Request::Action(Action::FullscreenWindow { id: Some(window_id) }))?;
-        validate_handled(response)
+        send_action(Action::FullscreenWindow { id: Some(window_id) })
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn toggle_floating(&self, window_id: u64) -> Result<(), ModuleError> {
-        let response = send_request(Request::Action(Action::ToggleWindowFloating { id: Some(window_id) }))?;
-        validate_handled(response)
+        send_action(Action::ToggleWindowFloating { id: Some(window_id) })
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn center_window(&self, window_id: u64) -> Result<(), ModuleError> {
-        let response = send_request(Request::Action(Action::CenterWindow { id: Some(window_id) }))?;
-        validate_handled(response)
+        send_action(Action::CenterWindow { id: Some(window_id) })
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn center_visible_columns(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::CenterVisibleColumns {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::CenterVisibleColumns {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn expand_column_to_available_width(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::ExpandColumnToAvailableWidth {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::ExpandColumnToAvailableWidth {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn toggle_windowed_fullscreen(&self, window_id: u64) -> Result<(), ModuleError> {
-        let response = send_request(Request::Action(Action::ToggleWindowedFullscreen { id: Some(window_id) }))?;
-        validate_handled(response)
+        send_action(Action::ToggleWindowedFullscreen { id: Some(window_id) })
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn consume_window_into_column(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::ConsumeWindowIntoColumn {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::ConsumeWindowIntoColumn {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn expel_window_from_column(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::ExpelWindowFromColumn {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::ExpelWindowFromColumn {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn reset_window_height(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::ResetWindowHeight { id: None }))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::ResetWindowHeight { id: None })
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn switch_preset_column_width(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::SwitchPresetColumnWidth {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::SwitchPresetColumnWidth {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn switch_preset_window_height(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::SwitchPresetWindowHeight { id: None }))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::SwitchPresetWindowHeight { id: None })
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_window_to_workspace_down(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveWindowToWorkspaceDown { focus: false }))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveWindowToWorkspaceDown { focus: false })
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_window_to_workspace_up(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveWindowToWorkspaceUp { focus: false }))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveWindowToWorkspaceUp { focus: false })
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_window_to_monitor_left(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveWindowToMonitorLeft {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveWindowToMonitorLeft {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_window_to_monitor_right(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveWindowToMonitorRight {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveWindowToMonitorRight {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_window_to_monitor_up(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveWindowToMonitorUp {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveWindowToMonitorUp {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_window_to_monitor_down(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveWindowToMonitorDown {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveWindowToMonitorDown {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn toggle_column_tabbed_display(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::ToggleColumnTabbedDisplay {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::ToggleColumnTabbedDisplay {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn focus_workspace_previous(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::FocusWorkspacePrevious {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::FocusWorkspacePrevious {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_column_left(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveColumnLeft {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveColumnLeft {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_column_right(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveColumnRight {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveColumnRight {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_column_to_first(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveColumnToFirst {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveColumnToFirst {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_column_to_last(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveColumnToLast {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveColumnToLast {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_window_down(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveWindowDown {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveWindowDown {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_window_up(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveWindowUp {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveWindowUp {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_window_down_or_to_workspace_down(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveWindowDownOrToWorkspaceDown {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveWindowDownOrToWorkspaceDown {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_window_up_or_to_workspace_up(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveWindowUpOrToWorkspaceUp {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveWindowUpOrToWorkspaceUp {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_column_left_or_to_monitor_left(&self, window_id: u64) -> Result<(), ModuleError> {
-        self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveColumnLeftOrToMonitorLeft {}))?;
-        validate_handled(response)
+        self.focused_action(window_id, Action::MoveColumnLeftOrToMonitorLeft {})
     }
 
     #[tracing::instrument(level = "TRACE", err)]
     pub fn move_column_right_or_to_monitor_right(&self, window_id: u64) -> Result<(), ModuleError> {
+        self.focused_action(window_id, Action::MoveColumnRightOrToMonitorRight {})
+    }
+
+    fn focused_action(&self, window_id: u64, action: Action) -> Result<(), ModuleError> {
         self.focus_window(window_id)?;
-        let response = send_request(Request::Action(Action::MoveColumnRightOrToMonitorRight {}))?;
-        validate_handled(response)
+        send_action(action)
     }
 
     pub fn query_outputs(&self) -> Result<HashMap<String, Output>, ModuleError> {
@@ -295,8 +242,7 @@ impl CompositorClient {
 
         let effective_col = if is_stacked && !keep_stacked {
             tracing::trace!("expelling stacked window from column");
-            let response = send_request(Request::Action(Action::ExpelWindowFromColumn {}))?;
-            validate_handled(response)?;
+            send_action(Action::ExpelWindowFromColumn {})?;
 
             let response = send_request(Request::Windows)?;
             let windows: Vec<niri_ipc::Window> = match response {
@@ -318,8 +264,7 @@ impl CompositorClient {
         let target_index = (effective_col as i32 + position_delta).max(1) as usize;
         tracing::trace!("moving column from {} to {}", effective_col, target_index);
 
-        let response = send_request(Request::Action(Action::MoveColumnToIndex { index: target_index }))?;
-        validate_handled(response)?;
+        send_action(Action::MoveColumnToIndex { index: target_index })?;
 
         if let Some(original_focus) = currently_focused {
             if original_focus != window_id {
@@ -331,14 +276,15 @@ impl CompositorClient {
     }
 }
 
-#[tracing::instrument(level = "TRACE", err)]
-fn send_request(request: Request) -> Result<Reply, ModuleError> {
-    connect_socket()?.send(request).map_err(ModuleError::CompositorIpc)
+fn send_action(action: Action) -> Result<(), ModuleError> {
+    validate_handled(send_request(Request::Action(action))?)
 }
 
-#[tracing::instrument(level = "TRACE", err)]
-fn connect_socket() -> Result<Socket, ModuleError> {
-    Socket::connect().map_err(ModuleError::CompositorIpc)
+fn send_request(request: Request) -> Result<Reply, ModuleError> {
+    Socket::connect()
+        .map_err(ModuleError::CompositorIpc)?
+        .send(request)
+        .map_err(ModuleError::CompositorIpc)
 }
 
 fn validate_handled(response: Reply) -> Result<(), ModuleError> {
@@ -347,6 +293,10 @@ fn validate_handled(response: Reply) -> Result<(), ModuleError> {
         Ok(other) => Err(ModuleError::unexpected_response("Handled", other)),
         Err(msg) => Err(ModuleError::CompositorReply(msg)),
     }
+}
+
+fn connect_socket() -> Result<Socket, ModuleError> {
+    Socket::connect().map_err(ModuleError::CompositorIpc)
 }
 
 pub struct WindowEventStream {
@@ -487,10 +437,10 @@ enum TrackerState {
     WindowsOnly(Vec<niri_ipc::Window>),
     WorkspacesOnly(Vec<Workspace>),
     Ready {
-        windows: std::collections::BTreeMap<u64, niri_ipc::Window>,
-        workspaces: std::collections::BTreeMap<u64, Workspace>,
-        active_per_workspace: std::collections::BTreeMap<u64, u64>,
-        last_focused_per_workspace: std::collections::BTreeMap<u64, u64>,
+        windows: BTreeMap<u64, niri_ipc::Window>,
+        workspaces: BTreeMap<u64, Workspace>,
+        active_per_workspace: BTreeMap<u64, u64>,
+        last_focused_per_workspace: BTreeMap<u64, u64>,
     },
 }
 
@@ -509,8 +459,8 @@ impl WindowTracker {
                     Some(WorkspacesOnly(ws)) => Some(Ready {
                         windows: windows.iter().map(|w| (w.id, w.clone())).collect(),
                         workspaces: ws.into_iter().map(|w| (w.id, w)).collect(),
-                        active_per_workspace: std::collections::BTreeMap::new(),
-                        last_focused_per_workspace: std::collections::BTreeMap::new(),
+                        active_per_workspace: BTreeMap::new(),
+                        last_focused_per_workspace: BTreeMap::new(),
                     }),
                     Some(Ready { workspaces, active_per_workspace, last_focused_per_workspace, .. }) => Some(Ready {
                         windows: windows.iter().map(|w| (w.id, w.clone())).collect(),
@@ -526,8 +476,8 @@ impl WindowTracker {
                     Some(WindowsOnly(wins)) => Some(Ready {
                         windows: wins.iter().map(|w| (w.id, w.clone())).collect(),
                         workspaces: workspaces.into_iter().map(|w| (w.id, w)).collect(),
-                        active_per_workspace: std::collections::BTreeMap::new(),
-                        last_focused_per_workspace: std::collections::BTreeMap::new(),
+                        active_per_workspace: BTreeMap::new(),
+                        last_focused_per_workspace: BTreeMap::new(),
                     }),
                     Some(Ready { windows, active_per_workspace, last_focused_per_workspace, .. }) => Some(Ready {
                         windows,
@@ -635,10 +585,10 @@ impl WindowTracker {
 
     fn generate_snapshot(
         &self,
-        windows: &std::collections::BTreeMap<u64, niri_ipc::Window>,
-        workspaces: &std::collections::BTreeMap<u64, Workspace>,
-        active_per_workspace: &std::collections::BTreeMap<u64, u64>,
-        last_focused_per_workspace: &std::collections::BTreeMap<u64, u64>,
+        windows: &BTreeMap<u64, niri_ipc::Window>,
+        workspaces: &BTreeMap<u64, Workspace>,
+        active_per_workspace: &BTreeMap<u64, u64>,
+        last_focused_per_workspace: &BTreeMap<u64, u64>,
         filter_workspace: bool,
     ) -> WindowSnapshot {
         struct WindowWithWorkspace<'a> {
@@ -646,7 +596,7 @@ impl WindowTracker {
             workspace: &'a Workspace,
         }
 
-        let active_workspace_per_output: std::collections::HashMap<_, _> = workspaces
+        let active_workspace_per_output: HashMap<_, _> = workspaces
             .values()
             .filter(|ws| ws.is_active)
             .filter_map(|ws| ws.output.as_ref().map(|output| (output.clone(), ws.id)))
@@ -673,9 +623,9 @@ impl WindowTracker {
             })
             .collect();
 
-        let mut position_map: std::collections::HashMap<u64, (usize, usize)> = std::collections::HashMap::new();
+        let mut position_map: HashMap<u64, (usize, usize)> = HashMap::new();
 
-        for ws_id in window_workspace_pairs.iter().map(|p| p.workspace.id).collect::<std::collections::BTreeSet<_>>() {
+        for ws_id in window_workspace_pairs.iter().map(|p| p.workspace.id).collect::<BTreeSet<_>>() {
             let anchor_pos = last_focused_per_workspace.get(&ws_id)
                 .and_then(|win_id| {
                     window_workspace_pairs.iter()

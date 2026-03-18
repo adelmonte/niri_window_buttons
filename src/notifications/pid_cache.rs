@@ -63,7 +63,7 @@ struct CacheEntry {
     expires_at: SystemTime,
 }
 
-static DBUS_SYSTEM_INTERFACE: &str = "org.freedesktop.DBus";
+const DBUS_SYSTEM_INTERFACE: &str = "org.freedesktop.DBus";
 
 async fn cache_worker(rx: Receiver<CacheRequest>, ttl: Duration) -> anyhow::Result<()> {
     let mut storage = CacheStorage::new(ttl);

@@ -1,6 +1,5 @@
 use std::{cell::{Cell, RefCell}, collections::HashMap, mem, rc::Rc, time::Duration};
 use async_channel::Sender;
-use futures::Stream;
 use libpulse_binding::{
     callbacks::ListResult,
     context::{
@@ -26,14 +25,10 @@ thread_local! {
     static PA_RECONNECT_BACKOFF: Cell<u64> = const { Cell::new(1) };
 }
 
-pub fn create_stream() -> impl Stream<Item = AudioState> {
+pub fn create_stream() -> async_channel::Receiver<AudioState> {
     let (tx, rx) = async_channel::unbounded();
     glib::idle_add_local_once(move || setup_pulse_audio(tx));
-    async_stream::stream! {
-        while let Ok(state) = rx.recv().await {
-            yield state;
-        }
-    }
+    rx
 }
 
 pub fn toggle_mute(sink_inputs: &[(u32, bool)]) {
@@ -93,7 +88,7 @@ fn setup_pulse_audio(tx: Sender<AudioState>) {
                 PA_RECONNECT_BACKOFF.with(|b| b.set(1));
                 on_context_ready(tx_state.clone());
             }
-            Some(State::Failed) | Some(State::Terminated) => {
+            Some(State::Failed | State::Terminated) => {
                 tracing::error!("PulseAudio context disconnected");
                 let _ = tx_reconnect.try_send(HashMap::new());
                 let tx = tx_reconnect.clone();

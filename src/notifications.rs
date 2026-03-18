@@ -1,6 +1,6 @@
 use std::{ops::Deref, time::Duration};
 use async_channel::Sender;
-use futures::{Stream, TryStreamExt};
+use futures::TryStreamExt;
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer};
 use waybar_cffi::gtk::glib;
@@ -13,15 +13,10 @@ use zbus::{
 
 mod pid_cache;
 
-pub fn create_stream() -> impl Stream<Item = NotificationData> {
+pub fn create_stream() -> async_channel::Receiver<NotificationData> {
     let (tx, rx) = async_channel::unbounded();
     glib::spawn_future_local(run_monitor_with_reconnect(tx));
-
-    async_stream::stream! {
-        while let Ok(notification) = rx.recv().await {
-            yield notification;
-        }
-    }
+    rx
 }
 
 async fn run_monitor_with_reconnect(tx: Sender<NotificationData>) {
@@ -118,8 +113,8 @@ pub struct HintData {
     pub sender_pid: Option<i64>,
 }
 
-static NOTIFICATION_INTERFACE: &str = "org.freedesktop.Notifications";
-static NOTIFY_METHOD: &str = "Notify";
+const NOTIFICATION_INTERFACE: &str = "org.freedesktop.Notifications";
+const NOTIFY_METHOD: &str = "Notify";
 
 #[tracing::instrument(level = "TRACE", skip_all, err)]
 async fn run_monitor(tx: Sender<NotificationData>) -> anyhow::Result<()> {
