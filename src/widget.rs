@@ -635,7 +635,7 @@ impl WindowButton {
             gtk::gdk::DragAction::COPY,
         );
 
-        let drag_start: Rc<RefCell<Option<(f64, i32)>>> = Rc::new(RefCell::new(None));
+        let drag_start: Rc<RefCell<Option<(f64, i32, f64)>>> = Rc::new(RefCell::new(None));
         let is_dragging: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
         let committed_offset: Rc<Cell<i32>> = Rc::new(Cell::new(0));
         let ghost_pos: Rc<Cell<f64>> = Rc::new(Cell::new(0.0));
@@ -654,7 +654,7 @@ impl WindowButton {
                     if let Ok(container) = parent.downcast::<gtk::Box>() {
                         let (ex, _) = event.position();
                         if let Some((cx, _)) = btn.translate_coordinates(&container, ex as i32, 0) {
-                            *drag_start_press.borrow_mut() = Some((cx as f64, container.child_position(btn)));
+                            *drag_start_press.borrow_mut() = Some((cx as f64, container.child_position(btn), ex));
                         }
                     }
                 }
@@ -680,7 +680,7 @@ impl WindowButton {
             let cx = cx as f64;
 
             if !*is_dragging_motion.borrow() {
-                if let Some((press_cx, _)) = *drag_start_motion.borrow() {
+                if let Some((press_cx, _, _)) = *drag_start_motion.borrow() {
                     if (cx - press_cx).abs() > 5.0 {
                         *is_dragging_motion.borrow_mut() = true;
                         *skip_motion.borrow_mut() = true;
@@ -723,13 +723,13 @@ impl WindowButton {
             }
 
             if *is_dragging_motion.borrow() {
-                if let Some((press_cx, start_slot)) = *drag_start_motion.borrow() {
+                if let Some((press_cx, start_slot, grab_offset)) = *drag_start_motion.borrow() {
                     let btn_w = btn.allocation().width() as f64;
                     if btn_w == 0.0 { return gtk::glib::Propagation::Proceed; }
 
                     let displacement = cx - press_cx;
 
-                    let ghost_x = (cx - btn_w / 2.0).max(0.0);
+                    let ghost_x = (cx - grab_offset).max(0.0);
                     ghost_pos_motion.set(ghost_x);
                     if let Some(da) = ghost_drawing_motion.borrow().as_ref() {
                         da.queue_draw();
@@ -793,7 +793,7 @@ impl WindowButton {
                     btn.set_opacity(1.0);
 
                     if let Some(container) = btn.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) {
-                        if let Some((_, start_slot)) = *drag_start_release.borrow() {
+                        if let Some((_, start_slot, _)) = *drag_start_release.borrow() {
                             let final_slot = container.child_position(btn);
                             let delta = final_slot - start_slot;
                             if delta != 0 {
