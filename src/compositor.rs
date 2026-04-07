@@ -2,8 +2,8 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::Deref,
 };
-use async_channel::{Receiver, Sender};
 use niri_ipc::{Action, Event, Output, Reply, Request, Workspace, socket::Socket};
+use waybar_cffi::gtk::glib;
 use crate::{errors::ModuleError, settings::Settings};
 
 #[derive(Debug, Clone)]
@@ -201,12 +201,8 @@ impl CompositorClient {
         }
     }
 
-    pub fn create_window_stream(&self) -> WindowEventStream {
-        WindowEventStream::start(self.settings.only_current_workspace())
-    }
-
-    pub fn create_workspace_stream(&self) -> WorkspaceEventStream {
-        WorkspaceEventStream::start()
+    pub fn only_current_workspace(&self) -> bool {
+        self.settings.only_current_workspace()
     }
 
     #[tracing::instrument(level = "TRACE", err)]
@@ -299,54 +295,28 @@ fn connect_socket() -> Result<Socket, ModuleError> {
     Socket::connect().map_err(ModuleError::CompositorIpc)
 }
 
-pub struct WindowEventStream {
-    receiver: Receiver<WindowSnapshot>,
+pub fn start_window_stream(tx: glib::Sender<WindowSnapshot>, filter_workspace: bool) {
+    std::thread::spawn(move || {
+        if let Err(e) = run_window_stream(&tx, filter_workspace) {
+            tracing::error!(%e, "window event stream terminated");
+        }
+    });
 }
 
-impl WindowEventStream {
-    fn start(filter_workspace: bool) -> Self {
-        let (tx, rx) = async_channel::unbounded();
-        std::thread::spawn(move || {
-            if let Err(e) = run_window_stream(tx, filter_workspace) {
-                tracing::error!(%e, "window event stream terminated");
-            }
-        });
-
-        Self { receiver: rx }
-    }
-
-    pub async fn next_snapshot(&self) -> Option<WindowSnapshot> {
-        self.receiver.recv().await.ok()
-    }
+pub fn start_workspace_stream(tx: glib::Sender<Vec<Workspace>>) {
+    std::thread::spawn(move || {
+        if let Err(e) = run_workspace_stream(&tx) {
+            tracing::error!(%e, "workspace event stream terminated");
+        }
+    });
 }
 
-pub struct WorkspaceEventStream {
-    receiver: Receiver<Vec<Workspace>>,
-}
-
-impl WorkspaceEventStream {
-    fn start() -> Self {
-        let (tx, rx) = async_channel::unbounded();
-        std::thread::spawn(move || {
-            if let Err(e) = run_workspace_stream(tx) {
-                tracing::error!(%e, "workspace event stream terminated");
-            }
-        });
-
-        Self { receiver: rx }
-    }
-
-    pub async fn next_workspaces(&self) -> Option<Vec<Workspace>> {
-        self.receiver.recv().await.ok()
-    }
-}
-
-fn run_workspace_stream(tx: Sender<Vec<Workspace>>) -> Result<(), ModuleError> {
+fn run_workspace_stream(tx: &glib::Sender<Vec<Workspace>>) -> Result<(), ModuleError> {
     const MAX_BACKOFF_SECS: u64 = 30;
     let mut backoff_secs = 1u64;
 
     loop {
-        match try_run_workspace_stream(&tx) {
+        match try_run_workspace_stream(tx) {
             Ok(()) | Err(ModuleError::SnapshotChannelClosed) => {
                 tracing::info!("workspace event stream ended");
                 return Ok(());
@@ -360,7 +330,7 @@ fn run_workspace_stream(tx: Sender<Vec<Workspace>>) -> Result<(), ModuleError> {
     }
 }
 
-fn try_run_workspace_stream(tx: &Sender<Vec<Workspace>>) -> Result<(), ModuleError> {
+fn try_run_workspace_stream(tx: &glib::Sender<Vec<Workspace>>) -> Result<(), ModuleError> {
     let mut socket = connect_socket()?;
     let response = socket.send(Request::EventStream).map_err(ModuleError::CompositorIpc)?;
     validate_handled(response)?;
@@ -371,7 +341,7 @@ fn try_run_workspace_stream(tx: &Sender<Vec<Workspace>>) -> Result<(), ModuleErr
     loop {
         match event_reader() {
             Ok(Event::WorkspacesChanged { workspaces }) => {
-                tx.send_blocking(workspaces).map_err(|_| ModuleError::SnapshotChannelClosed)?;
+                tx.send(workspaces).map_err(|_| ModuleError::SnapshotChannelClosed)?;
             }
             Ok(_) => {}
             Err(e) => {
@@ -381,13 +351,13 @@ fn try_run_workspace_stream(tx: &Sender<Vec<Workspace>>) -> Result<(), ModuleErr
     }
 }
 
-fn run_window_stream(tx: Sender<WindowSnapshot>, filter_workspace: bool) -> Result<(), ModuleError> {
+fn run_window_stream(tx: &glib::Sender<WindowSnapshot>, filter_workspace: bool) -> Result<(), ModuleError> {
     const MAX_BACKOFF_SECS: u64 = 30;
     let mut backoff_secs = 1u64;
     let mut window_state = WindowTracker::new();
 
     loop {
-        match try_run_window_stream(&tx, &mut window_state, filter_workspace) {
+        match try_run_window_stream(tx, &mut window_state, filter_workspace) {
             Ok(()) | Err(ModuleError::SnapshotChannelClosed) => {
                 tracing::info!("window event stream ended");
                 return Ok(());
@@ -402,7 +372,7 @@ fn run_window_stream(tx: Sender<WindowSnapshot>, filter_workspace: bool) -> Resu
 }
 
 fn try_run_window_stream(
-    tx: &Sender<WindowSnapshot>,
+    tx: &glib::Sender<WindowSnapshot>,
     window_state: &mut WindowTracker,
     filter_workspace: bool,
 ) -> Result<(), ModuleError> {
@@ -417,7 +387,7 @@ fn try_run_window_stream(
         match event_reader() {
             Ok(event) => {
                 if let Some(snapshot) = window_state.process_event(event, filter_workspace) {
-                    tx.send_blocking(snapshot).map_err(|_| ModuleError::SnapshotChannelClosed)?;
+                    tx.send(snapshot).map_err(|_| ModuleError::SnapshotChannelClosed)?;
                 }
             }
             Err(e) => {

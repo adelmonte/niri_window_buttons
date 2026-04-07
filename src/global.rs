@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use async_channel::Sender;
 use futures::StreamExt;
+use niri_ipc::Workspace;
 use waybar_cffi::gtk::glib;
 use crate::{
     audio,
-    compositor::{CompositorClient, WindowSnapshot, WorkspaceEventStream},
+    compositor::{self, CompositorClient, WindowSnapshot},
     icons::IconResolver,
     notifications::{self, NotificationData},
     settings::Settings,
@@ -52,8 +53,25 @@ impl SharedState {
             glib::spawn_future_local(forward_audio_updates(tx.clone()));
         }
 
-        glib::spawn_future_local(forward_window_updates(tx.clone(), self.compositor().create_window_stream()));
-        glib::spawn_future_local(forward_workspace_changes(tx, self.compositor().create_workspace_stream()));
+        let window_tx = tx.clone();
+        let (glib_win_tx, glib_win_rx) = glib::MainContext::channel(glib::Priority::DEFAULT);
+        glib_win_rx.attach(None, move |snapshot: WindowSnapshot| {
+            if let Err(e) = window_tx.try_send(EventMessage::WindowUpdate(snapshot)) {
+                tracing::error!(%e, "failed to forward window update");
+            }
+            glib::ControlFlow::Continue
+        });
+        compositor::start_window_stream(glib_win_tx, self.compositor().only_current_workspace());
+
+        let workspace_tx = tx;
+        let (glib_ws_tx, glib_ws_rx) = glib::MainContext::channel(glib::Priority::DEFAULT);
+        glib_ws_rx.attach(None, move |_: Vec<Workspace>| {
+            if let Err(e) = workspace_tx.try_send(EventMessage::Workspaces) {
+                tracing::error!(%e, "failed to forward workspace change");
+            }
+            glib::ControlFlow::Continue
+        });
+        compositor::start_workspace_stream(glib_ws_tx);
 
         rx
     }
@@ -80,22 +98,6 @@ async fn forward_notifications(tx: Sender<EventMessage>) {
     while let Some(notification) = notification_stream.next().await {
         if let Err(e) = tx.send(EventMessage::Notification(Box::new(notification))).await {
             tracing::error!(%e, "failed to forward notification");
-        }
-    }
-}
-
-async fn forward_window_updates(tx: Sender<EventMessage>, stream: crate::compositor::WindowEventStream) {
-    while let Some(snapshot) = stream.next_snapshot().await {
-        if let Err(e) = tx.send(EventMessage::WindowUpdate(snapshot)).await {
-            tracing::error!(%e, "failed to forward window update");
-        }
-    }
-}
-
-async fn forward_workspace_changes(tx: Sender<EventMessage>, stream: WorkspaceEventStream) {
-    while stream.next_workspaces().await.is_some() {
-        if let Err(e) = tx.send(EventMessage::Workspaces).await {
-            tracing::error!(%e, "failed to forward workspace change");
         }
     }
 }
