@@ -578,3 +578,4 @@ Customize appearance using Waybar's GTK CSS. The module container uses class `.n
 - Double stacked bar
 - Dynamic sized buttons to reflect niri overview
 - Multi-select drag and drop
+- Window previews
