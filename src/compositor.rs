@@ -211,64 +211,108 @@ impl CompositorClient {
             return Ok(());
         }
 
-        tracing::info!("repositioning window {} by {} columns (keep_stacked: {})", window_id, position_delta, keep_stacked);
-
-        let response = send_request(Request::Windows)?;
-        let all_windows: Vec<niri_ipc::Window> = match response {
-            Ok(niri_ipc::Response::Windows(windows)) => windows,
-            Ok(other) => return Err(ModuleError::unexpected_response("Windows", other)),
-            Err(msg) => return Err(ModuleError::CompositorReply(msg)),
-        };
-
-        let currently_focused = all_windows.iter().find(|w| w.is_focused).map(|w| w.id);
-
-        let target_window = all_windows.iter().find(|w| w.id == window_id);
-        let Some(target) = target_window else {
+        let all_windows = query_windows()?;
+        let Some(target) = all_windows.iter().find(|w| w.id == window_id) else {
             tracing::warn!("target window not found in window list");
             return Ok(());
         };
+        let (current_col, _) = target.layout.pos_in_scrolling_layout.unwrap_or((1, 1));
+        let target_index = (current_col as i32 + position_delta).max(1) as usize;
 
-        let (current_col, tile_position) = target
-            .layout
-            .pos_in_scrolling_layout
-            .unwrap_or((1, 1));
-        let is_stacked = tile_position > 1;
+        self.move_column_to_absolute_index(window_id, target_index, keep_stacked)
+    }
 
-        self.focus_window(window_id)?;
+    #[tracing::instrument(level = "TRACE", err)]
+    pub fn move_column_to_absolute_index(&self, window_id: u64, target_index: usize, keep_stacked: bool) -> Result<(), ModuleError> {
+        let all_windows = query_windows()?;
+        let currently_focused = all_windows.iter().find(|w| w.is_focused).map(|w| w.id);
 
-        let effective_col = if is_stacked && !keep_stacked {
-            tracing::trace!("expelling stacked window from column");
-            send_action(Action::ExpelWindowFromColumn {})?;
-
-            let response = send_request(Request::Windows)?;
-            let windows: Vec<niri_ipc::Window> = match response {
-                Ok(niri_ipc::Response::Windows(w)) => w,
-                Ok(other) => return Err(ModuleError::unexpected_response("Windows", other)),
-                Err(msg) => return Err(ModuleError::CompositorReply(msg)),
-            };
-
-            windows
-                .iter()
-                .find(|w| w.id == window_id)
-                .and_then(|w| w.layout.pos_in_scrolling_layout)
-                .map(|(col, _)| col)
-                .unwrap_or(current_col)
-        } else {
-            current_col
-        };
-
-        let target_index = (effective_col as i32 + position_delta).max(1) as usize;
-        tracing::trace!("moving column from {} to {}", effective_col, target_index);
-
-        send_action(Action::MoveColumnToIndex { index: target_index })?;
+        self.move_column_inner(window_id, target_index, keep_stacked)?;
 
         if let Some(original_focus) = currently_focused {
             if original_focus != window_id {
                 self.focus_window(original_focus)?;
             }
         }
-
         Ok(())
+    }
+
+    #[tracing::instrument(level = "TRACE", err, skip(moves))]
+    pub fn reposition_windows_group(&self, moves: &[(u64, usize)], keep_stacked: bool) -> Result<(), ModuleError> {
+        if moves.is_empty() {
+            return Ok(());
+        }
+
+        let all_windows = query_windows()?;
+        let currently_focused = all_windows.iter().find(|w| w.is_focused).map(|w| w.id);
+
+        let filtered: Vec<(u64, usize)> = if keep_stacked {
+            let mut best_per_col: HashMap<usize, (u64, usize)> = HashMap::new();
+            for &(wid, target) in moves {
+                let Some(w) = all_windows.iter().find(|w| w.id == wid) else { continue };
+                let Some((col, _)) = w.layout.pos_in_scrolling_layout else { continue };
+                best_per_col
+                    .entry(col)
+                    .and_modify(|e| if target < e.1 { *e = (wid, target); })
+                    .or_insert((wid, target));
+            }
+            best_per_col.into_values().collect()
+        } else {
+            moves.to_vec()
+        };
+
+        let sum_current: i32 = filtered
+            .iter()
+            .filter_map(|(wid, _)| all_windows.iter().find(|w| w.id == *wid))
+            .filter_map(|w| w.layout.pos_in_scrolling_layout.map(|(c, _)| c as i32))
+            .sum();
+        let sum_target: i32 = filtered.iter().map(|(_, t)| *t as i32).sum();
+
+        let mut ordered = filtered;
+        if sum_target >= sum_current {
+            ordered.sort_by(|a, b| b.1.cmp(&a.1));
+        } else {
+            ordered.sort_by(|a, b| a.1.cmp(&b.1));
+        }
+
+        for (window_id, target_index) in ordered {
+            if let Err(e) = self.move_column_inner(window_id, target_index, keep_stacked) {
+                tracing::error!("group move failed for window {}: {}", window_id, e);
+            }
+        }
+
+        if let Some(original_focus) = currently_focused {
+            let _ = self.focus_window(original_focus);
+        }
+        Ok(())
+    }
+
+    fn move_column_inner(&self, window_id: u64, target_index: usize, keep_stacked: bool) -> Result<(), ModuleError> {
+        let all_windows = query_windows()?;
+        let Some(target) = all_windows.iter().find(|w| w.id == window_id) else {
+            tracing::warn!("window {} not found in window list", window_id);
+            return Ok(());
+        };
+        let (_, tile_position) = target.layout.pos_in_scrolling_layout.unwrap_or((1, 1));
+        let is_stacked = tile_position > 1;
+
+        self.focus_window(window_id)?;
+
+        if is_stacked && !keep_stacked {
+            send_action(Action::ExpelWindowFromColumn {})?;
+        }
+
+        let target_index = target_index.max(1);
+        send_action(Action::MoveColumnToIndex { index: target_index })?;
+        Ok(())
+    }
+}
+
+fn query_windows() -> Result<Vec<niri_ipc::Window>, ModuleError> {
+    match send_request(Request::Windows)? {
+        Ok(niri_ipc::Response::Windows(windows)) => Ok(windows),
+        Ok(other) => Err(ModuleError::unexpected_response("Windows", other)),
+        Err(msg) => Err(ModuleError::CompositorReply(msg)),
     }
 }
 

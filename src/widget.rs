@@ -22,6 +22,64 @@ pub fn clear_selection(selection: &SelectionState) {
     }
 }
 
+pub struct DragGroup {
+    pub members: Vec<(u64, gtk::Button)>,
+    pub anchor_index: usize,
+}
+
+fn build_drag_group(
+    selection: &SelectionState,
+    window_id: u64,
+    self_button: &gtk::Button,
+) -> Option<DragGroup> {
+    let sel = selection.borrow();
+    if sel.len() < 2 || !sel.contains_key(&window_id) {
+        return None;
+    }
+
+    let parent = self_button.parent()?.downcast::<gtk::Box>().ok()?;
+
+    let mut members: Vec<(u64, gtk::Button, i32)> = sel
+        .iter()
+        .filter_map(|(wid, btn)| {
+            let btn_parent = btn.parent()?.downcast::<gtk::Box>().ok()?;
+            if btn_parent != parent {
+                return None;
+            }
+            Some((*wid, btn.clone(), parent.child_position(btn)))
+        })
+        .collect();
+
+    if members.len() < 2 {
+        return None;
+    }
+
+    members.sort_by_key(|(_, _, slot)| *slot);
+    let anchor_index = members.iter().position(|(wid, _, _)| *wid == window_id)?;
+    let members = members.into_iter().map(|(wid, btn, _)| (wid, btn)).collect();
+    Some(DragGroup { members, anchor_index })
+}
+
+pub fn reorder_group(container: &gtk::Box, group: &DragGroup, first_slot: i32) {
+    if group.members.is_empty() {
+        return;
+    }
+    let current_first = container.child_position(&group.members[0].1);
+    let move_right = first_slot >= current_first;
+    let indices: Vec<usize> = if move_right {
+        (0..group.members.len()).rev().collect()
+    } else {
+        (0..group.members.len()).collect()
+    };
+    for i in indices {
+        let (_, ref member_btn) = group.members[i];
+        let target = first_slot + i as i32;
+        if container.child_position(member_btn) != target {
+            container.reorder_child(member_btn, target);
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct WindowButton {
     app_id: Option<String>,
@@ -636,6 +694,7 @@ impl WindowButton {
         );
 
         let drag_start: Rc<RefCell<Option<(f64, i32, f64)>>> = Rc::new(RefCell::new(None));
+        let drag_group: Rc<RefCell<Option<Rc<DragGroup>>>> = Rc::new(RefCell::new(None));
         let is_dragging: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
         let committed_offset: Rc<Cell<i32>> = Rc::new(Cell::new(0));
         let ghost_pos: Rc<Cell<f64>> = Rc::new(Cell::new(0.0));
@@ -647,6 +706,8 @@ impl WindowButton {
         let overlay = self.overlay.clone();
         let skip = self.skip_clicked.clone();
         let drag_start_press = drag_start.clone();
+        let drag_group_press = drag_group.clone();
+        let selection_press = self.selection.clone();
         let skip_for_press = skip.clone();
         self.gtk_button.connect_button_press_event(move |btn, event| {
             if event.button() == 1 && !*skip_for_press.borrow() {
@@ -655,6 +716,18 @@ impl WindowButton {
                         let (ex, _) = event.position();
                         if let Some((cx, _)) = btn.translate_coordinates(&container, ex as i32, 0) {
                             *drag_start_press.borrow_mut() = Some((cx as f64, container.child_position(btn), ex));
+
+                            let group = build_drag_group(&selection_press, window_id, btn);
+                            if group.is_none() {
+                                let sel = selection_press.borrow();
+                                let has_self = sel.contains_key(&window_id);
+                                let sel_len = sel.len();
+                                drop(sel);
+                                if sel_len > 0 && !has_self {
+                                    clear_selection(&selection_press);
+                                }
+                            }
+                            *drag_group_press.borrow_mut() = group.map(Rc::new);
                         }
                     }
                 }
@@ -663,6 +736,7 @@ impl WindowButton {
         });
 
         let drag_start_motion = drag_start.clone();
+        let drag_group_motion = drag_group.clone();
         let is_dragging_motion = is_dragging.clone();
         let committed_offset_motion = committed_offset.clone();
         let ghost_pos_motion = ghost_pos.clone();
@@ -680,21 +754,50 @@ impl WindowButton {
             let cx = cx as f64;
 
             if !*is_dragging_motion.borrow() {
-                if let Some((press_cx, _, _)) = *drag_start_motion.borrow() {
+                let start_data = *drag_start_motion.borrow();
+                if let Some((press_cx, _, _)) = start_data {
                     if (cx - press_cx).abs() > 5.0 {
                         *is_dragging_motion.borrow_mut() = true;
                         *skip_motion.borrow_mut() = true;
 
                         let alloc = btn.allocation();
+                        let btn_w = alloc.width();
+                        let btn_h = alloc.height();
                         let scale = btn.scale_factor();
+
+                        let group_opt = drag_group_motion.borrow().clone();
+                        let group_len = group_opt.as_ref().map(|g| g.members.len() as i32).unwrap_or(1);
+                        let anchor_index = group_opt.as_ref().map(|g| g.anchor_index as i32).unwrap_or(0);
+
+                        if let Some(group) = group_opt.as_ref() {
+                            let n = container.children().len() as i32;
+                            let start_data = *drag_start_motion.borrow();
+                            if let Some((press_cx, start_slot, grab_offset)) = start_data {
+                                let first_slot = (start_slot - anchor_index).clamp(1, (n - group_len).max(1));
+                                reorder_group(&container, group, first_slot);
+                                let new_start = first_slot + anchor_index;
+                                *drag_start_motion.borrow_mut() = Some((press_cx, new_start, grab_offset));
+                            }
+                        }
+
+                        let composite_w = btn_w * group_len;
                         if let Ok(surface) = gtk::cairo::ImageSurface::create(
                             gtk::cairo::Format::ARgb32,
-                            alloc.width() * scale,
-                            alloc.height() * scale,
+                            composite_w * scale,
+                            btn_h * scale,
                         ) {
                             surface.set_device_scale(scale as f64, scale as f64);
                             if let Ok(cr) = gtk::cairo::Context::new(&surface) {
-                                btn.draw(&cr);
+                                if let Some(group) = group_opt.as_ref() {
+                                    for (i, (_, member_btn)) in group.members.iter().enumerate() {
+                                        cr.save().ok();
+                                        cr.translate((i as i32 * btn_w) as f64, 0.0);
+                                        member_btn.draw(&cr);
+                                        cr.restore().ok();
+                                    }
+                                } else {
+                                    btn.draw(&cr);
+                                }
                             }
                             *ghost_surface_motion.borrow_mut() = Some(surface);
                         }
@@ -717,19 +820,30 @@ impl WindowButton {
                         da.show();
                         *ghost_drawing_motion.borrow_mut() = Some(da);
 
-                        btn.set_opacity(0.0);
+                        if let Some(group) = group_opt.as_ref() {
+                            for (_, member_btn) in &group.members {
+                                member_btn.set_opacity(0.0);
+                            }
+                        } else {
+                            btn.set_opacity(0.0);
+                        }
                     }
                 }
             }
 
             if *is_dragging_motion.borrow() {
-                if let Some((press_cx, start_slot, grab_offset)) = *drag_start_motion.borrow() {
+                let start_data = *drag_start_motion.borrow();
+                if let Some((press_cx, start_slot, grab_offset)) = start_data {
                     let btn_w = btn.allocation().width() as f64;
                     if btn_w == 0.0 { return gtk::glib::Propagation::Proceed; }
 
+                    let group_opt = drag_group_motion.borrow().clone();
+                    let group_len = group_opt.as_ref().map(|g| g.members.len() as i32).unwrap_or(1);
+                    let anchor_index = group_opt.as_ref().map(|g| g.anchor_index as i32).unwrap_or(0);
+
                     let displacement = cx - press_cx;
 
-                    let ghost_x = (cx - grab_offset).max(0.0);
+                    let ghost_x = (cx - grab_offset - (anchor_index as f64) * btn_w).max(0.0);
                     ghost_pos_motion.set(ghost_x);
                     if let Some(da) = ghost_drawing_motion.borrow().as_ref() {
                         da.queue_draw();
@@ -761,10 +875,16 @@ impl WindowButton {
                         if crossed {
                             committed_offset_motion.set(slot_offset);
                             let n = container.children().len() as i32;
-                            let target_slot = (start_slot + slot_offset).clamp(1, n - 1);
-                            let current_pos = container.child_position(btn);
-                            if current_pos != target_slot {
-                                container.reorder_child(btn, target_slot);
+                            if let Some(group) = group_opt.as_ref() {
+                                let first_slot = (start_slot + slot_offset - anchor_index)
+                                    .clamp(1, (n - group_len).max(1));
+                                reorder_group(&container, group, first_slot);
+                            } else {
+                                let target_slot = (start_slot + slot_offset).clamp(1, n - 1);
+                                let current_pos = container.child_position(btn);
+                                if current_pos != target_slot {
+                                    container.reorder_child(btn, target_slot);
+                                }
                             }
                         }
                     }
@@ -775,6 +895,8 @@ impl WindowButton {
         });
 
         let drag_start_release = drag_start.clone();
+        let drag_group_release = drag_group.clone();
+        let selection_release = self.selection.clone();
         let is_dragging_release = is_dragging.clone();
         let ghost_drawing_release = ghost_drawing.clone();
         let ghost_surface_release = ghost_surface.clone();
@@ -790,14 +912,32 @@ impl WindowButton {
                     }
                     ghost_surface_release.borrow_mut().take();
 
-                    btn.set_opacity(1.0);
+                    let group_opt = drag_group_release.borrow_mut().take();
+
+                    if let Some(ref group) = group_opt {
+                        for (_, member_btn) in &group.members {
+                            member_btn.set_opacity(1.0);
+                        }
+                    } else {
+                        btn.set_opacity(1.0);
+                    }
 
                     if let Some(container) = btn.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) {
-                        if let Some((_, start_slot, _)) = *drag_start_release.borrow() {
+                        let keep_stacked = Self::check_modifier_static(state.settings().multi_select_modifier());
+                        if let Some(ref group) = group_opt {
+                            let moves: Vec<(u64, usize)> = group
+                                .members
+                                .iter()
+                                .map(|(wid, b)| (*wid, container.child_position(b).max(1) as usize))
+                                .collect();
+                            if let Err(e) = state.compositor().reposition_windows_group(&moves, keep_stacked) {
+                                tracing::error!("group reposition failed: {}", e);
+                            }
+                            clear_selection(&selection_release);
+                        } else if let Some((_, start_slot, _)) = *drag_start_release.borrow() {
                             let final_slot = container.child_position(btn);
                             let delta = final_slot - start_slot;
                             if delta != 0 {
-                                let keep_stacked = Self::check_modifier_static(state.settings().multi_select_modifier());
                                 if let Err(e) = state.compositor().reposition_window(window_id, delta, keep_stacked) {
                                     tracing::error!("reposition failed: {}", e);
                                 }
@@ -871,26 +1011,76 @@ impl WindowButton {
         );
 
         let initial_position = Rc::new(RefCell::new(0));
+        let drag_group: Rc<RefCell<Option<Rc<DragGroup>>>> = Rc::new(RefCell::new(None));
         let pos_for_begin = initial_position.clone();
+        let group_for_begin = drag_group.clone();
+        let selection_for_begin = self.selection.clone();
+        let window_id_begin = self.window_id;
 
         self.gtk_button.connect_drag_begin(move |widget, _| {
+            let group = build_drag_group(&selection_for_begin, window_id_begin, widget);
+
+            if group.is_none() {
+                let sel = selection_for_begin.borrow();
+                let has_self = sel.contains_key(&window_id_begin);
+                let sel_len = sel.len();
+                drop(sel);
+                if sel_len > 0 && !has_self {
+                    clear_selection(&selection_for_begin);
+                }
+            }
+
             if let Some(parent) = widget.parent() {
                 if let Ok(container) = parent.downcast::<gtk::Box>() {
+                    if let Some(ref g) = group {
+                        let n = container.children().len() as i32;
+                        let group_len = g.members.len() as i32;
+                        let anchor_slot = container.child_position(widget);
+                        let first_slot = (anchor_slot - g.anchor_index as i32)
+                            .clamp(1, (n - group_len).max(1));
+                        reorder_group(&container, g, first_slot);
+                    }
                     *pos_for_begin.borrow_mut() = container.child_position(widget);
                 }
             }
-            widget.style_context().add_class("dragging");
+            if let Some(ref g) = group {
+                for (_, member_btn) in &g.members {
+                    member_btn.style_context().add_class("dragging");
+                }
+            } else {
+                widget.style_context().add_class("dragging");
+            }
+            *group_for_begin.borrow_mut() = group.map(Rc::new);
         });
 
         let window_id = self.window_id;
+        let group_for_data_get = drag_group.clone();
         self.gtk_button.connect_drag_data_get(move |_, _, data, _, _| {
-            data.set_text(&window_id.to_string());
+            if let Some(ref g) = *group_for_data_get.borrow() {
+                let mut ids = vec![window_id.to_string()];
+                for (wid, _) in &g.members {
+                    if *wid != window_id {
+                        ids.push(wid.to_string());
+                    }
+                }
+                data.set_text(&ids.join(","));
+            } else {
+                data.set_text(&window_id.to_string());
+            }
         });
 
         let button_for_end = self.gtk_button.clone();
         let skip_clicked_drag = self.skip_clicked.clone();
+        let group_for_end = drag_group.clone();
         self.gtk_button.connect_drag_end(move |_, _| {
-            button_for_end.style_context().remove_class("dragging");
+            let group = group_for_end.borrow_mut().take();
+            if let Some(ref g) = group {
+                for (_, member_btn) in &g.members {
+                    member_btn.style_context().remove_class("dragging");
+                }
+            } else {
+                button_for_end.style_context().remove_class("dragging");
+            }
             *skip_clicked_drag.borrow_mut() = false;
         });
 
@@ -902,6 +1092,7 @@ impl WindowButton {
         let state_for_motion = self.state.clone();
         let window_id_for_motion = self.window_id;
         let button_for_motion = self.gtk_button.clone();
+        let selection_for_motion = self.selection.clone();
         self.gtk_button.connect_drag_motion(move |widget, ctx, _x, _y, _time| {
             let is_external = ctx.drag_get_source_widget().is_none();
 
@@ -933,11 +1124,32 @@ impl WindowButton {
                 if source != *widget {
                     if let Some(parent) = widget.parent() {
                         if let Ok(container) = parent.downcast::<gtk::Box>() {
-                            let source_pos = container.child_position(&source);
                             let target_pos = container.child_position(widget);
 
-                            if source_pos != target_pos {
-                                container.reorder_child(&source, target_pos);
+                            let source_btn: gtk::Button = match source.clone().downcast::<gtk::Button>() {
+                                Ok(b) => b,
+                                Err(_) => return true,
+                            };
+                            let sel = selection_for_motion.borrow();
+                            let source_wid = sel.iter().find_map(|(wid, b)| {
+                                if *b == source_btn { Some(*wid) } else { None }
+                            });
+                            drop(sel);
+
+                            let group = source_wid
+                                .and_then(|wid| build_drag_group(&selection_for_motion, wid, &source_btn));
+
+                            if let Some(ref g) = group {
+                                let n = container.children().len() as i32;
+                                let group_len = g.members.len() as i32;
+                                let first_slot = (target_pos - g.anchor_index as i32)
+                                    .clamp(1, (n - group_len).max(1));
+                                reorder_group(&container, g, first_slot);
+                            } else {
+                                let source_pos = container.child_position(&source);
+                                if source_pos != target_pos {
+                                    container.reorder_child(&source, target_pos);
+                                }
                             }
                         }
                     }
@@ -976,34 +1188,69 @@ impl WindowButton {
         });
 
         let state = state_for_drop;
+        let selection_for_drop = self.selection.clone();
         self.gtk_button.connect_drag_data_received(move |_widget, ctx, _, _, data, _, time| {
-            if let Some(text) = data.text() {
-                if let Ok(dragged_window_id) = text.parse::<u64>() {
-                    if let Some(source) = ctx.drag_get_source_widget() {
-                        if let Some(parent) = source.parent() {
-                            if let Ok(container) = parent.downcast::<gtk::Box>() {
-                                let start_pos = *pos_for_drop.borrow();
-                                let end_pos = container.child_position(&source);
-                                let delta = end_pos - start_pos;
+            let Some(text) = data.text() else {
+                ctx.drag_finish(false, false, time);
+                return;
+            };
 
-                                let keep_stacked = Self::check_modifier_static(state.settings().multi_select_modifier());
+            let ids: Vec<u64> = text
+                .split(',')
+                .filter_map(|s| s.trim().parse::<u64>().ok())
+                .collect();
 
-                                match state.compositor().reposition_window(dragged_window_id, delta, keep_stacked) {
-                                    Ok(()) => {
-                                        ctx.drag_finish(true, false, time);
-                                        return;
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("reposition failed: {}", e);
-                                    }
-                                }
-                            }
-                        }
+            let Some(&anchor_id) = ids.first() else {
+                ctx.drag_finish(false, false, time);
+                return;
+            };
+
+            let Some(source) = ctx.drag_get_source_widget() else {
+                ctx.drag_finish(false, false, time);
+                return;
+            };
+            let Some(parent) = source.parent() else {
+                ctx.drag_finish(false, false, time);
+                return;
+            };
+            let Ok(container) = parent.downcast::<gtk::Box>() else {
+                ctx.drag_finish(false, false, time);
+                return;
+            };
+
+            let keep_stacked = Self::check_modifier_static(state.settings().multi_select_modifier());
+
+            let is_group = ids.len() >= 2;
+            let result = if is_group {
+                let sel = selection_for_drop.borrow();
+                let moves: Vec<(u64, usize)> = ids
+                    .iter()
+                    .filter_map(|wid| {
+                        let btn = sel.get(wid)?;
+                        Some((*wid, container.child_position(btn).max(1) as usize))
+                    })
+                    .collect();
+                drop(sel);
+                state.compositor().reposition_windows_group(&moves, keep_stacked)
+            } else {
+                let start_pos = *pos_for_drop.borrow();
+                let end_pos = container.child_position(&source);
+                let delta = end_pos - start_pos;
+                state.compositor().reposition_window(anchor_id, delta, keep_stacked)
+            };
+
+            match result {
+                Ok(()) => {
+                    if is_group {
+                        clear_selection(&selection_for_drop);
                     }
+                    ctx.drag_finish(true, false, time);
+                }
+                Err(e) => {
+                    tracing::error!("reposition failed: {}", e);
+                    ctx.drag_finish(false, false, time);
                 }
             }
-
-            ctx.drag_finish(false, false, time);
         });
     }
 

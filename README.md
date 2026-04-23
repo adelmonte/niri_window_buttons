@@ -13,7 +13,7 @@ A Waybar module for displaying and managing traditional window buttons in the Ni
 - Multi-select windows with modifier keys
 - Per-application click behavior and styling via regex title matching
 - Advanced window filtering (by app, title, workspace)
-- Drag and drop window reordering with hover-to-focus for external drags
+- Drag and drop window reordering, including multi-select group drag, with hover-to-focus for external drags
 - Dynamic button sizing with taskbar width limits and scroll overflow
 - Multi-monitor support
 - Audio indicator with click-to-mute for windows playing audio
@@ -388,13 +388,14 @@ sudo usermod -aG input $USER
 **Usage:**
 - Hold modifier + left-click to select/deselect windows
 - Right-click with selections to show multi-select menu
+- Drag any selected window to move the whole group: members collapse into a contiguous block around the grabbed button and land adjacent on drop
 - Click any window (or window button without modifier) clears selection
 
 **Drag-and-drop with stacked/tabbed windows:**
 - Normal drag: expels window from stack, moves it individually
 - Modifier + drag: moves entire column together (keeps windows stacked)
 
-Note: Multi-select and modifier-drag are independent. Selecting stacked windows then modifier-dragging will move the column, not the selection. Use the right-click menu for batch actions on selections.
+The modifier is re-read at drop time, so you can build a selection with the modifier held, then release it before dropping to break stacks apart (or keep it held to preserve them).
 
 Custom commands receive `{window_ids}` as a comma-separated list of window IDs.
 
@@ -577,5 +578,4 @@ Customize appearance using Waybar's GTK CSS. The module container uses class `.n
 - Window grouping by app
 - Double stacked bar
 - Dynamic sized buttons to reflect niri overview
-- Multi-select drag and drop
 - Window previews
