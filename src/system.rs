@@ -10,7 +10,7 @@ pub struct ProcessInfo {
 }
 
 impl ProcessInfo {
-    #[tracing::instrument(level = "TRACE", err)]
+    #[tracing::instrument(level = "TRACE")]
     pub async fn query(pid: i64) -> Result<Self, ProcessError> {
         let stat_file = File::for_path(format!("/proc/{pid}/stat"));
 
