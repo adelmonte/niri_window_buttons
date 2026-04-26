@@ -15,7 +15,7 @@ bitflags = "2.9"
 evdev = "0.12"
 futures = "0.3"
 itertools = "0.14"
-niri-ipc = "=25.11.0"
+niri-ipc = "26.4.0"
 regex = "1.11"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
