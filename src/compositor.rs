@@ -444,6 +444,7 @@ fn try_run_window_stream(
 #[derive(Debug)]
 struct WindowTracker {
     state: Option<TrackerState>,
+    floating_anchors: HashMap<u64, u64>,
 }
 
 #[derive(Debug)]
@@ -460,7 +461,7 @@ enum TrackerState {
 
 impl WindowTracker {
     fn new() -> Self {
-        Self { state: None }
+        Self { state: None, floating_anchors: HashMap::new() }
     }
 
     #[tracing::instrument(level = "TRACE", skip(self))]
@@ -506,6 +507,8 @@ impl WindowTracker {
                 if let Some(Ready { windows, .. }) = &mut self.state {
                     windows.remove(&id);
                 }
+                self.floating_anchors.remove(&id);
+                self.floating_anchors.retain(|_, anchor_id| *anchor_id != id);
             }
             Event::WindowOpenedOrChanged { window } => {
                 if let Some(Ready { windows, last_focused_per_workspace, .. }) = &mut self.state {
@@ -591,18 +594,18 @@ impl WindowTracker {
         }
 
         if let Some(Ready { windows, workspaces, active_per_workspace, last_focused_per_workspace }) = &self.state {
-            Some(self.generate_snapshot(windows, workspaces, active_per_workspace, last_focused_per_workspace, filter_workspace))
+            Some(Self::generate_snapshot(windows, workspaces, active_per_workspace, last_focused_per_workspace, &mut self.floating_anchors, filter_workspace))
         } else {
             None
         }
     }
 
     fn generate_snapshot(
-        &self,
         windows: &BTreeMap<u64, niri_ipc::Window>,
         workspaces: &BTreeMap<u64, Workspace>,
         active_per_workspace: &BTreeMap<u64, u64>,
         last_focused_per_workspace: &BTreeMap<u64, u64>,
+        floating_anchors: &mut HashMap<u64, u64>,
         filter_workspace: bool,
     ) -> WindowSnapshot {
         struct WindowWithWorkspace<'a> {
@@ -640,10 +643,11 @@ impl WindowTracker {
         let mut position_map: HashMap<u64, (usize, usize)> = HashMap::new();
 
         for ws_id in window_workspace_pairs.iter().map(|p| p.workspace.id).collect::<BTreeSet<_>>() {
-            let anchor_pos = last_focused_per_workspace.get(&ws_id)
+            let fallback_anchor_win_id = last_focused_per_workspace.get(&ws_id).copied();
+            let fallback_anchor_pos = fallback_anchor_win_id
                 .and_then(|win_id| {
                     window_workspace_pairs.iter()
-                        .find(|p| p.window.id == *win_id)
+                        .find(|p| p.window.id == win_id)
                         .and_then(|p| p.window.layout.pos_in_scrolling_layout)
                 })
                 .unwrap_or_else(|| {
@@ -654,8 +658,30 @@ impl WindowTracker {
                         .unwrap_or((0, 0))
                 });
 
-            for pair in window_workspace_pairs.iter().filter(|p| p.workspace.id == ws_id && p.window.layout.pos_in_scrolling_layout.is_none()) {
-                position_map.insert(pair.window.id, (anchor_pos.0, anchor_pos.1 + 1));
+            let floating_ids: Vec<u64> = window_workspace_pairs.iter()
+                .filter(|p| p.workspace.id == ws_id && p.window.layout.pos_in_scrolling_layout.is_none())
+                .map(|p| p.window.id)
+                .collect();
+
+            for float_id in floating_ids {
+                let stable_pos = floating_anchors.get(&float_id)
+                    .and_then(|anchor_id| {
+                        window_workspace_pairs.iter()
+                            .find(|p| p.window.id == *anchor_id)
+                            .and_then(|p| p.window.layout.pos_in_scrolling_layout)
+                    });
+
+                let pos = match stable_pos {
+                    Some(p) => p,
+                    None => {
+                        if let Some(win_id) = fallback_anchor_win_id {
+                            floating_anchors.insert(float_id, win_id);
+                        }
+                        fallback_anchor_pos
+                    }
+                };
+
+                position_map.insert(float_id, (pos.0, pos.1 + 1));
             }
         }
 
