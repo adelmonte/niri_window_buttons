@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::LazyLock,
 };
 
@@ -263,6 +263,7 @@ struct ModuleInstance {
     selection: SelectionState,
     audio_state: AudioState,
     window_pids: HashMap<u64, u32>,
+    audio_window_state: HashSet<u64>,
 }
 
 impl ModuleInstance {
@@ -282,6 +283,7 @@ impl ModuleInstance {
             selection: create_selection_state(),
             audio_state: AudioState::new(),
             window_pids: HashMap::new(),
+            audio_window_state: HashSet::new(),
         }
     }
 
@@ -630,11 +632,13 @@ impl ModuleInstance {
         self.update_button_audio_states();
     }
 
-    fn update_button_audio_states(&self) {
-        let mut pid_window_count: HashMap<u32, usize> = HashMap::new();
-        for &pid in self.window_pids.values() {
-            *pid_window_count.entry(pid).or_insert(0) += 1;
+    fn update_button_audio_states(&mut self) {
+        let mut pid_to_windows: HashMap<u32, Vec<u64>> = HashMap::new();
+        for (&window_id, &pid) in &self.window_pids {
+            pid_to_windows.entry(pid).or_default().push(window_id);
         }
+
+        let mut new_audio_showing: HashSet<u64> = HashSet::new();
 
         for (window_id, button) in &self.buttons {
             let Some(&pid) = self.window_pids.get(window_id) else {
@@ -645,18 +649,36 @@ impl ModuleInstance {
                 button.update_audio_state(&[]);
                 continue;
             };
-            if pid_window_count.get(&pid).copied().unwrap_or(1) > 1 {
-                let focused_has_pid = self.previous_focused
-                    .and_then(|fid| self.window_pids.get(&fid))
-                    .map(|&fpid| fpid == pid)
+
+            let siblings = pid_to_windows.get(&pid).map_or(1, |v| v.len());
+            let show = if siblings <= 1 {
+                true
+            } else if self.audio_window_state.contains(window_id) {
+                true
+            } else {
+                let any_sibling_showing = pid_to_windows.get(&pid)
+                    .map(|wids| wids.iter().any(|wid| self.audio_window_state.contains(wid)))
                     .unwrap_or(false);
-                if focused_has_pid && Some(*window_id) != self.previous_focused {
-                    button.update_audio_state(&[]);
-                    continue;
+                if any_sibling_showing {
+                    false
+                } else {
+                    let focused_has_pid = self.previous_focused
+                        .and_then(|fid| self.window_pids.get(&fid))
+                        .map(|&fpid| fpid == pid)
+                        .unwrap_or(false);
+                    !focused_has_pid || Some(*window_id) == self.previous_focused
                 }
+            };
+
+            if show {
+                button.update_audio_state(inputs);
+                new_audio_showing.insert(*window_id);
+            } else {
+                button.update_audio_state(&[]);
             }
-            button.update_audio_state(inputs);
         }
+
+        self.audio_window_state = new_audio_showing;
     }
 }
 

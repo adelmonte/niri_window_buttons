@@ -153,6 +153,12 @@ fn query_sink_inputs(tx: Sender<AudioState>) {
                         if info.corked {
                             return;
                         }
+                        if let Some(role) = info.proplist.get_str(properties::MEDIA_ROLE) {
+                            match role.trim() {
+                                "event" | "a11y" => return,
+                                _ => {}
+                            }
+                        }
                         if let Some(pid_str) = info.proplist.get_str(properties::APPLICATION_PROCESS_ID) {
                             if let Ok(pid) = pid_str.trim().parse::<u32>() {
                                 accumulator.borrow_mut().push((info.index, pid, info.mute));
