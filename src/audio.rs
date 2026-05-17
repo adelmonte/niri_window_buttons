@@ -17,7 +17,11 @@ pub struct SinkInput {
     pub muted: bool,
 }
 
-pub type AudioState = HashMap<u32, Vec<SinkInput>>;
+#[derive(Debug, Clone, Default)]
+pub struct AudioState {
+    pub by_pid: HashMap<u32, Vec<SinkInput>>,
+    pub by_name: HashMap<String, Vec<SinkInput>>,
+}
 
 thread_local! {
     static PA_MAINLOOP: RefCell<Option<Mainloop>> = RefCell::new(None);
@@ -90,7 +94,7 @@ fn setup_pulse_audio(tx: Sender<AudioState>) {
             }
             Some(State::Failed | State::Terminated) => {
                 tracing::error!("PulseAudio context disconnected");
-                let _ = tx_reconnect.try_send(HashMap::new());
+                let _ = tx_reconnect.try_send(AudioState::default());
                 let tx = tx_reconnect.clone();
                 // Defer cleanup so we don't drop the context mid-callback
                 glib::idle_add_local_once(move || schedule_reconnect(tx));
@@ -111,7 +115,7 @@ fn setup_pulse_audio(tx: Sender<AudioState>) {
 }
 
 fn on_context_ready(tx: Sender<AudioState>) {
-    query_sink_inputs(tx.clone());
+    query_audio_state(tx.clone());
 
     PA_CONTEXT.with(|ctx| {
         let mut ctx_ref = ctx.borrow_mut();
@@ -120,7 +124,7 @@ fn on_context_ready(tx: Sender<AudioState>) {
             let tx_cb = tx;
             ctx.set_subscribe_callback(Some(Box::new(move |facility, _op, _index| {
                 if matches!(facility, Some(Facility::SinkInput)) {
-                    query_sink_inputs(tx_cb.clone());
+                    query_audio_state(tx_cb.clone());
                 }
             })));
         }
@@ -141,7 +145,39 @@ fn read_parent_pid(pid: u32) -> Option<u32> {
     None
 }
 
-fn query_sink_inputs(tx: Sender<AudioState>) {
+fn read_process_name(pid: u32) -> Option<String> {
+    std::fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()
+        .map(|s| s.trim().to_lowercase())
+}
+
+fn query_audio_state(tx: Sender<AudioState>) {
+    PA_CONTEXT.with(|ctx| {
+        let ctx_ref = ctx.borrow();
+        if let Some(ctx) = ctx_ref.as_ref() {
+            let introspector = ctx.introspect();
+            let client_pids: Rc<RefCell<HashMap<u32, u32>>> = Rc::new(RefCell::new(HashMap::new()));
+            let _ = introspector.get_client_info_list(move |result| {
+                match result {
+                    ListResult::Item(info) => {
+                        let pid = info.proplist.get_str(properties::APPLICATION_PROCESS_ID)
+                            .or_else(|| info.proplist.get_str("pipewire.sec.pid"))
+                            .and_then(|s| s.trim().parse::<u32>().ok());
+                        if let Some(pid) = pid {
+                            client_pids.borrow_mut().insert(info.index, pid);
+                        }
+                    }
+                    ListResult::End => {
+                        query_sink_inputs(tx.clone(), Rc::clone(&client_pids));
+                    }
+                    ListResult::Error => {}
+                }
+            });
+        }
+    });
+}
+
+fn query_sink_inputs(tx: Sender<AudioState>, client_pids: Rc<RefCell<HashMap<u32, u32>>>) {
     PA_CONTEXT.with(|ctx| {
         let ctx_ref = ctx.borrow();
         if let Some(ctx) = ctx_ref.as_ref() {
@@ -159,20 +195,26 @@ fn query_sink_inputs(tx: Sender<AudioState>) {
                                 _ => {}
                             }
                         }
-                        if let Some(pid_str) = info.proplist.get_str(properties::APPLICATION_PROCESS_ID) {
-                            if let Ok(pid) = pid_str.trim().parse::<u32>() {
-                                accumulator.borrow_mut().push((info.index, pid, info.mute));
-                            }
+                        let pid = info.proplist.get_str(properties::APPLICATION_PROCESS_ID)
+                            .and_then(|s| s.trim().parse::<u32>().ok())
+                            .or_else(|| {
+                                info.client.and_then(|cid| client_pids.borrow().get(&cid).copied())
+                            });
+                        if let Some(pid) = pid {
+                            accumulator.borrow_mut().push((info.index, pid, info.mute));
                         }
                     }
                     ListResult::End => {
                         let items = mem::take(&mut *accumulator.borrow_mut());
-                        let mut state: AudioState = HashMap::new();
+                        let mut state = AudioState::default();
                         for (index, pid, muted) in items {
                             let sink_input = SinkInput { index, muted };
+                            if let Some(name) = read_process_name(pid) {
+                                state.by_name.entry(name).or_default().push(sink_input.clone());
+                            }
                             let mut current = pid;
                             loop {
-                                state.entry(current).or_default().push(sink_input.clone());
+                                state.by_pid.entry(current).or_default().push(sink_input.clone());
                                 match read_parent_pid(current) {
                                     Some(parent) => current = parent,
                                     None => break,

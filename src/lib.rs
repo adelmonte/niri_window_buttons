@@ -263,6 +263,7 @@ struct ModuleInstance {
     selection: SelectionState,
     audio_state: AudioState,
     window_pids: HashMap<u64, u32>,
+    window_app_ids: HashMap<u64, String>,
     audio_window_state: HashSet<u64>,
 }
 
@@ -281,8 +282,9 @@ impl ModuleInstance {
             display_filter: screen::DisplayFilter::ShowAll,
             state,
             selection: create_selection_state(),
-            audio_state: AudioState::new(),
+            audio_state: AudioState::default(),
             window_pids: HashMap::new(),
+            window_app_ids: HashMap::new(),
             audio_window_state: HashSet::new(),
         }
     }
@@ -530,6 +532,9 @@ impl ModuleInstance {
             if let Some(pid) = window.pid.and_then(|p| u32::try_from(p).ok()) {
                 self.window_pids.insert(window.id, pid);
             }
+            if let Some(app_id) = &window.app_id {
+                self.window_app_ids.insert(window.id, app_id.to_lowercase());
+            }
 
             let button = self.buttons.entry(window.id).or_insert_with(|| {
                 new_button_added = true;
@@ -574,6 +579,7 @@ impl ModuleInstance {
             }
             self.selection.borrow_mut().remove(&window_id);
             self.window_pids.remove(&window_id);
+            self.window_app_ids.remove(&window_id);
         }
 
         if !self.buttons.is_empty() {
@@ -645,7 +651,10 @@ impl ModuleInstance {
                 button.update_audio_state(&[]);
                 continue;
             };
-            let Some(inputs) = self.audio_state.get(&pid) else {
+            let inputs = self.audio_state.by_pid.get(&pid)
+                .or_else(|| self.window_app_ids.get(window_id)
+                    .and_then(|name| self.audio_state.by_name.get(name)));
+            let Some(inputs) = inputs else {
                 button.update_audio_state(&[]);
                 continue;
             };
