@@ -644,6 +644,12 @@ impl ModuleInstance {
             pid_to_windows.entry(pid).or_default().push(window_id);
         }
 
+        let pid_claimed: HashSet<u32> = self.window_pids.values()
+            .filter_map(|pid| self.audio_state.by_pid.get(pid))
+            .flatten()
+            .map(|s| s.index)
+            .collect();
+
         let mut new_audio_showing: HashSet<u64> = HashSet::new();
 
         for (window_id, button) in &self.buttons {
@@ -652,8 +658,15 @@ impl ModuleInstance {
                 continue;
             };
             let inputs = self.audio_state.by_pid.get(&pid)
-                .or_else(|| self.window_app_ids.get(window_id)
-                    .and_then(|name| self.audio_state.by_name.get(name)));
+                .or_else(|| {
+                    let name = self.window_app_ids.get(window_id)?;
+                    let name_inputs = self.audio_state.by_name.get(name)?;
+                    if name_inputs.iter().any(|i| pid_claimed.contains(&i.index)) {
+                        None
+                    } else {
+                        Some(name_inputs)
+                    }
+                });
             let Some(inputs) = inputs else {
                 button.update_audio_state(&[]);
                 continue;
