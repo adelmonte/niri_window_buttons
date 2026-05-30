@@ -288,6 +288,8 @@ Placeholders: `{window_id}`, `{app_id}`, `{title}`
 | `center-column` | Center column on screen |
 | `center-window` | Center window on screen |
 | `center-visible-columns` | Center all visible columns |
+| **Display** | |
+| `toggle-title` | Toggle title label visibility for this button (per-button, ephemeral) |
 | **Fullscreen/Floating** | |
 | `fullscreen-window` | Toggle fullscreen |
 | `toggle-windowed-fullscreen` | Toggle windowed fullscreen |
@@ -326,6 +328,7 @@ Customize which actions appear in the context menu and their order:
   {"label": "  Maximize to Edges", "action": "maximize-window-to-edges"},
   {"label": "󰉩  Toggle Floating", "action": "toggle-window-floating"},
   {"label": "󱆃  Custom Script", "command": "my-script.sh {window_ids}"},
+  {"label": "  Toggle Title", "action": "toggle-title"},
   {"label": "  Close Window", "action": "close-window"}
 ]
 ```
@@ -573,7 +576,6 @@ Customize appearance using Waybar's GTK CSS. The module container uses class `.n
 ## Wishlist / Future Ideas
 
 - Per-workspace app rules (different click actions per workspace)
-- Toggle window title visibility per button
 - Minimize/scratchpad support
 - Window grouping by app
 - Double stacked bar

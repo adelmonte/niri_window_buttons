@@ -539,7 +539,7 @@ impl ModuleInstance {
             let button = self.buttons.entry(window.id).or_insert_with(|| {
                 new_button_added = true;
                 let btn = WindowButton::create(&self.state, window, self.selection.clone(), self.drag_overlay.clone());
-                btn.get_widget().set_size_request(initial_width, -1);
+                btn.resize_for_width(initial_width);
                 self.container.add(btn.get_widget());
                 btn
             });
@@ -587,7 +587,6 @@ impl ModuleInstance {
             let final_width = self.calculate_button_width(button_count);
 
             for button in self.buttons.values() {
-                button.get_widget().set_size_request(final_width, -1);
                 button.resize_for_width(final_width);
             }
 

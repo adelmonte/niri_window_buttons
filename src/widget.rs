@@ -89,7 +89,8 @@ pub struct WindowButton {
     audio_event_box: EventBox,
     audio_label: gtk::Label,
     audio_sink_inputs: Rc<RefCell<Vec<(u32, bool)>>>,
-    display_titles: bool,
+    display_titles: Rc<Cell<bool>>,
+    full_width: Rc<Cell<i32>>,
     state: SharedState,
     window_id: u64,
     title: Rc<RefCell<Option<String>>>,
@@ -103,7 +104,7 @@ impl Debug for WindowButton {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WindowButton")
             .field("app_id", &self.app_id)
-            .field("display_titles", &self.display_titles)
+            .field("display_titles", &self.display_titles.get())
             .field("window_id", &self.window_id)
             .finish_non_exhaustive()
     }
@@ -145,7 +146,7 @@ impl WindowButton {
     #[tracing::instrument(level = "TRACE", fields(app_id = &window.app_id))]
     pub fn create(state: &SharedState, window: &niri_ipc::Window, selection: SelectionState, overlay: gtk::Overlay) -> Self {
         let state_clone = state.clone();
-        let display_titles = state.settings().show_window_titles();
+        let display_titles = Rc::new(Cell::new(state.settings().show_window_titles()));
 
         let icon_gap = state.settings().icon_spacing();
         let layout_box = gtk::Box::new(Orientation::Horizontal, icon_gap);
@@ -158,6 +159,7 @@ impl WindowButton {
             title_label.set_ellipsize(gtk::pango::EllipsizeMode::None);
         }
         title_label.set_xalign(0.0);
+        title_label.set_no_show_all(true);
 
         let gtk_button = gtk::Button::new();
         gtk_button.set_always_show_image(true);
@@ -173,7 +175,7 @@ impl WindowButton {
         let max_width = state.settings().max_button_width(None);
         gtk_button.set_size_request(max_width, -1);
 
-        if display_titles && truncate_titles {
+        if display_titles.get() && truncate_titles {
             let icon_dim = state.settings().icon_size();
             let max_chars = (max_width - icon_dim - icon_gap - 16) / 8;
             title_label.set_max_width_chars(max_chars);
@@ -207,6 +209,7 @@ impl WindowButton {
             audio_label,
             audio_sink_inputs,
             display_titles,
+            full_width: Rc::new(Cell::new(0)),
             state: state_clone,
             window_id: window.id,
             title: Rc::new(RefCell::new(window.title.clone())),
@@ -243,7 +246,7 @@ impl WindowButton {
             *self.title.borrow_mut() = Some(t.to_string());
         }
 
-        if self.display_titles {
+        if self.display_titles.get() {
             if let Some(text) = title {
                 let display_text = if self.state.settings().allow_title_linebreaks() {
                     text.to_string()
@@ -337,6 +340,7 @@ impl WindowButton {
         let selection_left = self.selection.clone();
 
         let title_clone = title.clone();
+        let self_click = self.clone();
         self.gtk_button.connect_clicked(move |_| {
             if *skip_clicked_click.borrow() {
                 *skip_clicked_click.borrow_mut() = false;
@@ -356,16 +360,16 @@ impl WindowButton {
 
                 if time_since_last < Duration::from_millis(300) {
                     clear_selection(&selection_left);
-                    Self::execute_click_action(&state, window_id, &actions.double_click, app_id_ref, title_str);
+                    self_click.execute_click_action(&actions.double_click, app_id_ref, title_str);
                     *last_click = Instant::now() - Duration::from_secs(1);
                 } else {
                     clear_selection(&selection_left);
-                    Self::execute_click_action(&state, window_id, &actions.left_click_focused, app_id_ref, title_str);
+                    self_click.execute_click_action(&actions.left_click_focused, app_id_ref, title_str);
                     *last_click = now;
                 }
             } else {
                 clear_selection(&selection_left);
-                Self::execute_click_action(&state, window_id, &actions.left_click_unfocused, app_id_ref, title_str);
+                self_click.execute_click_action(&actions.left_click_unfocused, app_id_ref, title_str);
             }
         });
 
@@ -398,7 +402,7 @@ impl WindowButton {
                         let title_ref = title_press.borrow();
                         let title_str = title_ref.as_deref();
                         let actions = state_press.settings().get_click_actions(app_id_ref, title_str);
-                        Self::execute_click_action(&state_press, window_id, &actions.left_click_unfocused, app_id_ref, title_str);
+                        menu_self.execute_click_action(&actions.left_click_unfocused, app_id_ref, title_str);
                     }
                 }
                 gtk::glib::Propagation::Proceed
@@ -416,7 +420,7 @@ impl WindowButton {
                 if action.is_menu() {
                     menu_self.display_context_menu(window_id);
                 } else {
-                    Self::execute_click_action(&state_press, window_id, action, app_id_ref, title_str);
+                    menu_self.execute_click_action(action, app_id_ref, title_str);
                 }
                 gtk::glib::Propagation::Stop
             } else if event.button() == 3 {
@@ -437,7 +441,7 @@ impl WindowButton {
                     if action.is_menu() {
                         menu_self.display_context_menu(window_id);
                     } else {
-                        Self::execute_click_action(&state_press, window_id, action, app_id_ref, title_str);
+                        menu_self.execute_click_action(action, app_id_ref, title_str);
                     }
                 }
                 gtk::glib::Propagation::Stop
@@ -446,16 +450,16 @@ impl WindowButton {
             }
         });
 
-        let state_scroll = self.state.clone();
         let app_id_scroll = self.app_id.clone();
         let title_scroll = title.clone();
+        let self_scroll = self.clone();
         self.gtk_button.connect_scroll_event(move |_, event| {
             use waybar_cffi::gtk::gdk::ScrollDirection;
 
             let app_id_ref = app_id_scroll.as_deref();
             let title_ref = title_scroll.borrow();
             let title_str = title_ref.as_deref();
-            let actions = state_scroll.settings().get_click_actions(app_id_ref, title_str);
+            let actions = self_scroll.state.settings().get_click_actions(app_id_ref, title_str);
 
             let (action, scroll_delta) = match event.direction() {
                 ScrollDirection::Up => (&actions.scroll_up, -1.0),
@@ -475,7 +479,7 @@ impl WindowButton {
             };
 
             if !action.is_none() {
-                Self::execute_click_action(&state_scroll, window_id, action, app_id_ref, title_str);
+                self_scroll.execute_click_action(action, app_id_ref, title_str);
             } else {
                 scroll_taskbar(scroll_delta);
             }
@@ -484,8 +488,7 @@ impl WindowButton {
     }
 
     fn execute_click_action(
-        state: &SharedState,
-        window_id: u64,
+        &self,
         action: &crate::settings::ClickAction,
         app_id: Option<&str>,
         title: Option<&str>,
@@ -493,10 +496,10 @@ impl WindowButton {
         use crate::settings::ClickAction;
         match action {
             ClickAction::Action(window_action) => {
-                Self::execute_action(state, window_id, window_action);
+                self.perform_window_action(window_action);
             }
             ClickAction::Command { command } => {
-                Self::execute_command(command, window_id, app_id, title);
+                Self::execute_command(command, self.window_id, app_id, title);
             }
         }
     }
@@ -504,7 +507,7 @@ impl WindowButton {
     fn execute_action(state: &SharedState, window_id: u64, action: &crate::settings::WindowAction) {
         use crate::settings::WindowAction;
         let result = match action {
-            WindowAction::None | WindowAction::Menu => return,
+            WindowAction::None | WindowAction::Menu | WindowAction::ToggleTitle => return,
             WindowAction::FocusWindow => state.compositor().focus_window(window_id),
             WindowAction::CloseWindow => state.compositor().close_window(window_id),
             WindowAction::MaximizeColumn => state.compositor().maximize_window_column(window_id),
@@ -554,16 +557,16 @@ impl WindowButton {
             let item = MenuItem::with_label(&menu_item.label);
             menu.append(&item);
 
-            let state = self.state.clone();
             let action = menu_item.action.clone();
             let command = menu_item.command.clone();
             let app_id = self.app_id.clone();
             let title = self.title.borrow().clone();
+            let self_item = self.clone();
             item.connect_activate(move |_| {
                 if let Some(ref cmd) = command {
-                    Self::execute_command(cmd, window_id, app_id.as_deref(), title.as_deref());
+                    Self::execute_command(cmd, self_item.window_id, app_id.as_deref(), title.as_deref());
                 } else if let Some(ref act) = action {
-                    Self::execute_action(&state, window_id, act);
+                    self_item.perform_window_action(act);
                 }
             });
         }
@@ -1256,29 +1259,20 @@ impl WindowButton {
 
     #[tracing::instrument(level = "TRACE")]
     fn setup_icon_rendering(&self, icon_path: Option<PathBuf>) {
-        let last_allocation = RefCell::new(None);
+        let last_scale = RefCell::new(0i32);
         let container = self.layout_box.clone();
         let label = self.title_label.clone();
         let audio_event_box = self.audio_event_box.clone();
-        let show_titles = self.display_titles;
+        let display_titles = self.display_titles.clone();
         let icon_dimension = self.state.settings().icon_size();
 
-        self.gtk_button.connect_size_allocate(move |button, allocation| {
-            let mut needs_render = container.children().is_empty();
-
-            if !needs_render {
-                if let Some(prev_alloc) = last_allocation.take() {
-                    if &prev_alloc != allocation {
-                        needs_render = true;
-                    }
-                } else {
-                    needs_render = true;
-                }
-
-                last_allocation.replace(Some(*allocation));
-            }
+        self.gtk_button.connect_size_allocate(move |button, _allocation| {
+            let current_scale = button.scale_factor();
+            let needs_render = container.children().is_empty()
+                || *last_scale.borrow() != current_scale;
 
             if needs_render {
+                last_scale.replace(current_scale);
                 let icon_image = Self::load_icon_image(icon_path.as_ref(), button, icon_dimension)
                     .unwrap_or_else(|| {
                         static FALLBACK: &str = "application-x-executable";
@@ -1299,6 +1293,7 @@ impl WindowButton {
                 let label_copy = label.clone();
                 let audio_copy = audio_event_box.clone();
                 let button_copy = button.clone();
+                let display_titles_copy = display_titles.clone();
                 gtk::glib::source::idle_add_local_once(move || {
                     for child in container_copy.children() {
                         container_copy.remove(&child);
@@ -1306,13 +1301,16 @@ impl WindowButton {
 
                     container_copy.pack_start(&icon_image, false, false, 0);
                     container_copy.pack_start(&audio_copy, false, false, 0);
-
-                    if show_titles {
-                        container_copy.pack_start(&label_copy, true, true, 0);
-                    }
+                    container_copy.pack_start(&label_copy, true, true, 0);
 
                     container_copy.show_all();
                     button_copy.show_all();
+
+                    if display_titles_copy.get() {
+                        label_copy.show();
+                    } else {
+                        label_copy.hide();
+                    }
                 });
             }
         });
@@ -1377,15 +1375,54 @@ impl WindowButton {
     }
 
     pub fn resize_for_width(&self, width: i32) {
-        if self.display_titles && self.state.settings().truncate_titles() {
-            let icon_dim = self.state.settings().icon_size();
-            let icon_gap = self.state.settings().icon_spacing();
-            let max_chars = ((width - icon_dim - icon_gap - 16) / 8).max(0);
-            self.title_label.set_max_width_chars(max_chars);
-
-            if max_chars == 0 {
-                self.title_label.hide();
+        self.full_width.set(width);
+        if self.display_titles.get() {
+            self.gtk_button.set_size_request(width, -1);
+            if self.state.settings().truncate_titles() {
+                let icon_dim = self.state.settings().icon_size();
+                let icon_gap = self.state.settings().icon_spacing();
+                let max_chars = ((width - icon_dim - icon_gap - 16) / 8).max(0);
+                self.title_label.set_max_width_chars(max_chars);
+                if max_chars == 0 {
+                    self.title_label.hide();
+                } else {
+                    self.title_label.show();
+                }
+            } else {
+                self.title_label.show();
             }
+        } else {
+            self.gtk_button.set_size_request(-1, -1);
+        }
+    }
+
+    fn toggle_title(&self) {
+        let new_val = !self.display_titles.get();
+        self.display_titles.set(new_val);
+        if new_val {
+            let title_ref = self.title.borrow();
+            let display_text = title_ref.as_deref().map(|t| {
+                if self.state.settings().allow_title_linebreaks() {
+                    t.to_string()
+                } else {
+                    t.replace('\n', " ").replace('\r', " ")
+                }
+            }).unwrap_or_default();
+            self.title_label.set_text(&display_text);
+        } else {
+            self.title_label.hide();
+            self.title_label.set_max_width_chars(-1);
+        }
+        let w = self.full_width.get();
+        self.resize_for_width(if w > 0 { w } else { self.gtk_button.allocation().width() });
+    }
+
+    fn perform_window_action(&self, action: &crate::settings::WindowAction) {
+        use crate::settings::WindowAction;
+        if matches!(action, WindowAction::ToggleTitle) {
+            self.toggle_title();
+        } else {
+            Self::execute_action(&self.state, self.window_id, action);
         }
     }
 }
