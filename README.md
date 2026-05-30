@@ -289,7 +289,7 @@ Placeholders: `{window_id}`, `{app_id}`, `{title}`
 | `center-window` | Center window on screen |
 | `center-visible-columns` | Center all visible columns |
 | **Display** | |
-| `toggle-title` | Toggle title label visibility for this button (per-button, ephemeral) |
+| `toggle-title` | Toggle title label visibility for this button |
 | **Fullscreen/Floating** | |
 | `fullscreen-window` | Toggle fullscreen |
 | `toggle-windowed-fullscreen` | Toggle windowed fullscreen |
@@ -466,6 +466,30 @@ Hide specific windows from the taskbar using flexible matching rules:
 | `workspace` | Hide all windows on specific workspace number |
 
 All matchers in a single rule must match (AND logic). Use multiple rules for OR logic.
+
+### Toggle Title Rules
+
+Auto-start specific windows with their title hidden (icon-only) using the same matchers as ignore rules:
+
+```jsonc
+"toggle_title_rules": [
+  {"app_id": "kitty"},
+  {"app_id": "firefox", "title_contains": "YouTube"}
+]
+```
+
+**Available matchers:**
+
+| Matcher | Description |
+|---------|-------------|
+| `app_id` | Exact app ID match |
+| `title` | Exact window title match |
+| `title_contains` | Partial title match (substring) |
+| `title_regex` | Regex pattern against title |
+
+All matchers in a single rule must match (AND logic). Use multiple rules for OR logic.
+
+The title can be toggled back on at any time using the `toggle-title` action.
 
 ### Notifications
 

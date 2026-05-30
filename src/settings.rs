@@ -47,6 +47,8 @@ pub struct Settings {
     click_actions: ClickActions,
     #[serde(default)]
     ignore_rules: Vec<IgnoreRule>,
+    #[serde(default)]
+    toggle_title_rules: Vec<ToggleTitleRule>,
     #[serde(default = "default_context_menu")]
     context_menu: Vec<ContextMenuItem>,
     #[serde(default)]
@@ -251,6 +253,18 @@ pub struct IgnoreRule {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ToggleTitleRule {
+    #[serde(default)]
+    pub app_id: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default, deserialize_with = "parse_optional_regex")]
+    pub title_regex: Option<Regex>,
+    #[serde(default)]
+    pub title_contains: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct ContextMenuItem {
     pub label: String,
     #[serde(default)]
@@ -444,6 +458,23 @@ impl Settings {
             let workspace_match = rule.workspace.map_or(true, |ws| workspace_id == Some(ws));
 
             if app_match && title_match && title_contains_match && title_regex_match && workspace_match {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn should_toggle_title(&self, app_id: Option<&str>, title: Option<&str>) -> bool {
+        for rule in &self.toggle_title_rules {
+            let app_match = rule.app_id.as_ref().map_or(true, |id| app_id == Some(id.as_str()));
+            let title_match = rule.title.as_ref().map_or(true, |t| title == Some(t.as_str()));
+            let title_contains_match = rule.title_contains.as_ref().map_or(true, |contains| {
+                title.map_or(false, |t| t.contains(contains))
+            });
+            let title_regex_match = rule.title_regex.as_ref().map_or(true, |regex| {
+                title.map_or(false, |t| regex.is_match(t))
+            });
+            if app_match && title_match && title_contains_match && title_regex_match {
                 return true;
             }
         }

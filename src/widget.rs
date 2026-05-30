@@ -146,7 +146,12 @@ impl WindowButton {
     #[tracing::instrument(level = "TRACE", fields(app_id = &window.app_id))]
     pub fn create(state: &SharedState, window: &niri_ipc::Window, selection: SelectionState, overlay: gtk::Overlay) -> Self {
         let state_clone = state.clone();
-        let display_titles = Rc::new(Cell::new(state.settings().show_window_titles()));
+        let show_titles = state.settings().show_window_titles()
+            && !state.settings().should_toggle_title(
+                window.app_id.as_deref(),
+                window.title.as_deref(),
+            );
+        let display_titles = Rc::new(Cell::new(show_titles));
 
         let icon_gap = state.settings().icon_spacing();
         let layout_box = gtk::Box::new(Orientation::Horizontal, icon_gap);
