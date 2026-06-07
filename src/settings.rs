@@ -158,6 +158,24 @@ pub struct AppRule {
     class: Option<String>,
     #[serde(default)]
     click_actions: Option<ClickActions>,
+    #[serde(default)]
+    workspace: Option<WorkspaceMatch>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum WorkspaceMatch {
+    Index(u8),
+    Name(String),
+}
+
+impl WorkspaceMatch {
+    fn matches(&self, idx: Option<u8>, name: Option<&str>) -> bool {
+        match self {
+            WorkspaceMatch::Index(i) => idx == Some(*i),
+            WorkspaceMatch::Name(n) => name == Some(n.as_str()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -418,23 +436,29 @@ impl Settings {
         &'a self,
         app_id: &str,
         title: &'a str,
+        ws_idx: Option<u8>,
+        ws_name: Option<String>,
     ) -> Box<dyn Iterator<Item = &'a str> + 'a> {
         match self.apps.get(app_id) {
             Some(rules) => Box::new(
                 rules
                     .iter()
-                    .filter(move |rule| rule.pattern.is_match(title))
+                    .filter(move |rule| {
+                        rule.pattern.is_match(title)
+                            && rule.workspace.as_ref().map_or(true, |w| w.matches(ws_idx, ws_name.as_deref()))
+                    })
                     .filter_map(|rule| rule.class.as_deref())
             ),
             None => Box::new(std::iter::empty()),
         }
     }
 
-    pub fn get_click_actions(&self, app_id: Option<&str>, title: Option<&str>) -> ClickActions {
+    pub fn get_click_actions(&self, app_id: Option<&str>, title: Option<&str>, ws_idx: Option<u8>, ws_name: Option<&str>) -> ClickActions {
         if let (Some(id), Some(t)) = (app_id, title) {
             if let Some(rules) = self.apps.get(id) {
                 for rule in rules {
-                    if rule.pattern.is_match(t) {
+                    let workspace_match = rule.workspace.as_ref().map_or(true, |w| w.matches(ws_idx, ws_name));
+                    if rule.pattern.is_match(t) && workspace_match {
                         if let Some(ref actions) = rule.click_actions {
                             return actions.clone();
                         }

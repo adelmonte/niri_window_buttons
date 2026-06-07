@@ -93,6 +93,7 @@ pub struct WindowButton {
     full_width: Rc<Cell<i32>>,
     state: SharedState,
     window_id: u64,
+    workspace_id: Rc<Cell<Option<u64>>>,
     title: Rc<RefCell<Option<String>>>,
     selection: SelectionState,
     tooltip_timeout: Rc<RefCell<Option<gtk::glib::SourceId>>>,
@@ -217,6 +218,7 @@ impl WindowButton {
             full_width: Rc::new(Cell::new(0)),
             state: state_clone,
             window_id: window.id,
+            workspace_id: Rc::new(Cell::new(window.workspace_id)),
             title: Rc::new(RefCell::new(window.title.clone())),
             selection,
             tooltip_timeout: Rc::new(RefCell::new(None)),
@@ -275,11 +277,23 @@ impl WindowButton {
                     style_ctx.remove_class(class);
                 }
 
-                for class in config.match_app_rules(app_id, window_title) {
+                let (ws_idx, ws_name) = self.state.resolve_workspace(self.workspace_id.get())
+                    .map_or((None, None), |(idx, name)| (Some(idx), name));
+                for class in config.match_app_rules(app_id, window_title, ws_idx, ws_name) {
                     style_ctx.add_class(class);
                 }
             }
         }
+    }
+
+    pub fn update_workspace(&self, workspace_id: Option<u64>) {
+        self.workspace_id.set(workspace_id);
+    }
+
+    fn click_actions(&self, app_id: Option<&str>, title: Option<&str>) -> crate::settings::ClickActions {
+        let (ws_idx, ws_name) = self.state.resolve_workspace(self.workspace_id.get())
+            .map_or((None, None), |(idx, name)| (Some(idx), name));
+        self.state.settings().get_click_actions(app_id, title, ws_idx, ws_name.as_deref())
     }
 
     #[tracing::instrument(level = "TRACE")]
@@ -335,7 +349,6 @@ impl WindowButton {
     }
 
     fn setup_click_handlers(&self, window_id: u64) {
-        let state = self.state.clone();
         let button_ref = self.gtk_button.clone();
         let last_click_time = Rc::new(RefCell::new(Instant::now() - Duration::from_secs(1)));
         let skip_clicked_press = self.skip_clicked.clone();
@@ -356,7 +369,7 @@ impl WindowButton {
             let app_id_ref = app_id.as_deref();
             let title_ref = title_clone.borrow();
             let title_str = title_ref.as_deref();
-            let actions = state.settings().get_click_actions(app_id_ref, title_str);
+            let actions = self_click.click_actions(app_id_ref, title_str);
 
             if is_currently_focused {
                 let mut last_click = last_click_time.borrow_mut();
@@ -406,7 +419,7 @@ impl WindowButton {
                         let app_id_ref = app_id_press.as_deref();
                         let title_ref = title_press.borrow();
                         let title_str = title_ref.as_deref();
-                        let actions = state_press.settings().get_click_actions(app_id_ref, title_str);
+                        let actions = menu_self.click_actions(app_id_ref, title_str);
                         menu_self.execute_click_action(&actions.left_click_unfocused, app_id_ref, title_str);
                     }
                 }
@@ -416,7 +429,7 @@ impl WindowButton {
                 let app_id_ref = app_id_press.as_deref();
                 let title_ref = title_press.borrow();
                 let title_str = title_ref.as_deref();
-                let actions = state_press.settings().get_click_actions(app_id_ref, title_str);
+                let actions = menu_self.click_actions(app_id_ref, title_str);
                 let action = if is_currently_focused {
                     &actions.middle_click_focused
                 } else {
@@ -437,7 +450,7 @@ impl WindowButton {
                     let app_id_ref = app_id_press.as_deref();
                     let title_ref = title_press.borrow();
                     let title_str = title_ref.as_deref();
-                    let actions = state_press.settings().get_click_actions(app_id_ref, title_str);
+                    let actions = menu_self.click_actions(app_id_ref, title_str);
                     let action = if is_currently_focused {
                         &actions.right_click_focused
                     } else {
@@ -464,7 +477,7 @@ impl WindowButton {
             let app_id_ref = app_id_scroll.as_deref();
             let title_ref = title_scroll.borrow();
             let title_str = title_ref.as_deref();
-            let actions = self_scroll.state.settings().get_click_actions(app_id_ref, title_str);
+            let actions = self_scroll.click_actions(app_id_ref, title_str);
 
             let (action, scroll_delta) = match event.direction() {
                 ScrollDirection::Up => (&actions.scroll_up, -1.0),

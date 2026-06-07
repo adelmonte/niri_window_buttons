@@ -438,8 +438,36 @@ Override click actions and add CSS classes based on app ID and window title patt
 - `"match"` - Regex pattern to match against window title (required)
 - `"class"` - CSS class to apply when matched (optional)
 - `"click_actions"` - Override click behavior for matching windows (optional)
+- `"workspace"` - Restrict the rule to a single workspace (optional). A number matches by
+  workspace index (e.g. `2`), a string matches by workspace name (e.g. `"web"`).
 
 Rules are evaluated in order. The first matching rule's settings are applied.
+
+**Per-workspace rules:** Use `"workspace"` to give an app different click actions depending on
+which workspace its window is on. Combine it with `"match"` to scope by title as well; the rule
+applies only when both match. The window's workspace is tracked live, so the correct rule is used
+even after a window moves between workspaces.
+
+```jsonc
+"apps": {
+  "firefox": [
+    {
+      "match": ".*",
+      "workspace": 2,
+      "click_actions": {
+        "left_click_focused": "center-column"
+      }
+    },
+    {
+      "match": ".*",
+      "workspace": "media",
+      "click_actions": {
+        "left_click_focused": "maximize-window-to-edges"
+      }
+    }
+  ]
+}
+```
 
 ### Ignore Rules
 
@@ -599,7 +627,6 @@ Customize appearance using Waybar's GTK CSS. The module container uses class `.n
 
 ## Wishlist / Future Ideas
 
-- Per-workspace app rules (different click actions per workspace)
 - Minimize/scratchpad support
 - Window grouping by app
 - Double stacked bar

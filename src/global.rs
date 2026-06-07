@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use async_channel::Sender;
 use futures::StreamExt;
 use niri_ipc::Workspace;
@@ -19,6 +20,7 @@ struct StateInner {
     settings: Settings,
     icon_resolver: IconResolver,
     compositor: CompositorClient,
+    workspaces: Mutex<HashMap<u64, (u8, Option<String>)>>,
 }
 
 impl SharedState {
@@ -27,11 +29,26 @@ impl SharedState {
             compositor: CompositorClient::create(settings.clone()),
             icon_resolver: IconResolver::new(),
             settings,
+            workspaces: Mutex::new(HashMap::new()),
         }))
     }
 
     pub fn settings(&self) -> &Settings {
         &self.0.settings
+    }
+
+    fn update_workspaces(&self, workspaces: Vec<Workspace>) {
+        if let Ok(mut map) = self.0.workspaces.lock() {
+            map.clear();
+            for ws in workspaces {
+                map.insert(ws.id, (ws.idx, ws.name));
+            }
+        }
+    }
+
+    pub fn resolve_workspace(&self, id: Option<u64>) -> Option<(u8, Option<String>)> {
+        let id = id?;
+        self.0.workspaces.lock().ok()?.get(&id).cloned()
     }
 
     pub fn icon_resolver(&self) -> &IconResolver {
@@ -64,8 +81,10 @@ impl SharedState {
         compositor::start_window_stream(glib_win_tx, self.compositor().only_current_workspace());
 
         let workspace_tx = tx;
+        let workspace_state = self.clone();
         let (glib_ws_tx, glib_ws_rx) = glib::MainContext::channel(glib::Priority::DEFAULT);
-        glib_ws_rx.attach(None, move |_: Vec<Workspace>| {
+        glib_ws_rx.attach(None, move |workspaces: Vec<Workspace>| {
+            workspace_state.update_workspaces(workspaces);
             if let Err(e) = workspace_tx.try_send(EventMessage::Workspaces) {
                 tracing::error!(%e, "failed to forward workspace change");
             }

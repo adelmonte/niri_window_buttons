@@ -545,6 +545,7 @@ impl ModuleInstance {
             });
 
             button.update_focus(window.is_focused);
+            button.update_workspace(window.workspace_id);
             button.update_title(window.title.as_deref());
             
             if window.is_focused {
