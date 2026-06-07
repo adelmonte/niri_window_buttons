@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-06-07
+
+### Added
+- Per-workspace app rules: an optional `workspace` matcher (by index or name) scopes an app rule's class and click-action overrides to a single workspace
+- Proportional button sizing: `proportional_button_width` sizes each button to its window's on-screen width in the niri layout, with `proportional_icon_size` to scale icons along with it
+- `toggle-title` click action to show or hide an individual button's title
+- `toggle_title_rules` to automatically collapse titles for windows matching app/title patterns
+
+### Fixed
+- Audio indicator now stays on the window playing audio instead of following focus
+- Audio indicator now appears for X11 apps and native PipeWire clients
+- Audio indicator no longer shows on every window of the same app
+- Floating window buttons no longer jump to follow focus
+
 ## [0.4.2] - 2026-04-26
 
 ### Fixed
