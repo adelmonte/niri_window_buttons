@@ -11,10 +11,11 @@ A Waybar module for displaying and managing traditional window buttons in the Ni
 - Separate actions for focused vs unfocused windows
 - Context menu with custom scripts support
 - Multi-select windows with modifier keys
-- Per-application click behavior and styling via regex title matching
+- Per-application click behavior and styling via regex title matching, optionally scoped per workspace
 - Advanced window filtering (by app, title, workspace)
 - Drag and drop window reordering, including multi-select group drag, with hover-to-focus for external drags
 - Dynamic button sizing with taskbar width limits and scroll overflow
+- Optional proportional button sizing that mirrors each window's width in the niri layout
 - Multi-monitor support
 - Audio indicator with click-to-mute for windows playing audio
 - Notification integration with urgency hints
@@ -190,6 +191,26 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
 | `max_taskbar_width` | Total taskbar width limit in pixels | `1200` |
 | `icon_size` | Icon dimensions in pixels | `24` |
 | `icon_spacing` | Space between icon and title in pixels | `6` |
+| `proportional_button_width` | Size each button to match its window's on-screen width | `false` |
+| `proportional_icon_size` | Shrink icons along with proportional buttons (only applies when `proportional_button_width` is enabled) | `true` |
+
+#### Proportional Button Width
+
+With `proportional_button_width` enabled, each button is sized to reflect how wide its window
+currently is on screen, mirroring the niri layout. A full-width window gets a button near
+`max_button_width`; a window taking half the screen gets roughly half that width, and so on
+(clamped between `min_button_width` and `max_button_width`). Buttons update live as you split,
+resize, or maximize columns.
+
+By default the app icons shrink along with the buttons. Set `proportional_icon_size` to `false`
+to keep icons at a fixed `icon_size` while the button widths still scale.
+
+```jsonc
+{
+  "proportional_button_width": true,
+  "proportional_icon_size": true
+}
+```
 
 #### Per-Output Dimension Configuration
 
@@ -630,5 +651,4 @@ Customize appearance using Waybar's GTK CSS. The module container uses class `.n
 - Minimize/scratchpad support
 - Window grouping by app
 - Double stacked bar
-- Dynamic sized buttons to reflect niri overview
 - Window previews

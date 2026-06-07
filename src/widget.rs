@@ -91,6 +91,7 @@ pub struct WindowButton {
     audio_sink_inputs: Rc<RefCell<Vec<(u32, bool)>>>,
     display_titles: Rc<Cell<bool>>,
     full_width: Rc<Cell<i32>>,
+    icon_dimension: Rc<Cell<i32>>,
     state: SharedState,
     window_id: u64,
     workspace_id: Rc<Cell<Option<u64>>>,
@@ -216,6 +217,7 @@ impl WindowButton {
             audio_sink_inputs,
             display_titles,
             full_width: Rc::new(Cell::new(0)),
+            icon_dimension: Rc::new(Cell::new(state.settings().icon_size())),
             state: state_clone,
             window_id: window.id,
             workspace_id: Rc::new(Cell::new(window.workspace_id)),
@@ -1278,32 +1280,36 @@ impl WindowButton {
     #[tracing::instrument(level = "TRACE")]
     fn setup_icon_rendering(&self, icon_path: Option<PathBuf>) {
         let last_scale = RefCell::new(0i32);
+        let last_icon_dim = RefCell::new(0i32);
         let container = self.layout_box.clone();
         let label = self.title_label.clone();
         let audio_event_box = self.audio_event_box.clone();
         let display_titles = self.display_titles.clone();
-        let icon_dimension = self.state.settings().icon_size();
+        let icon_dimension = self.icon_dimension.clone();
 
         self.gtk_button.connect_size_allocate(move |button, _allocation| {
             let current_scale = button.scale_factor();
+            let current_icon_dim = icon_dimension.get();
             let needs_render = container.children().is_empty()
-                || *last_scale.borrow() != current_scale;
+                || *last_scale.borrow() != current_scale
+                || *last_icon_dim.borrow() != current_icon_dim;
 
             if needs_render {
                 last_scale.replace(current_scale);
-                let icon_image = Self::load_icon_image(icon_path.as_ref(), button, icon_dimension)
+                last_icon_dim.replace(current_icon_dim);
+                let icon_image = Self::load_icon_image(icon_path.as_ref(), button, current_icon_dim)
                     .unwrap_or_else(|| {
                         static FALLBACK: &str = "application-x-executable";
 
                         ICON_THEME_INSTANCE.with(|theme| {
                             theme.lookup_icon_for_scale(
                                 FALLBACK,
-                                icon_dimension,
+                                current_icon_dim,
                                 button.scale_factor(),
                                 IconLookupFlags::empty(),
                             )
                         })
-                        .and_then(|info| Self::load_icon_image(info.filename().as_ref(), button, icon_dimension))
+                        .and_then(|info| Self::load_icon_image(info.filename().as_ref(), button, current_icon_dim))
                         .unwrap_or_else(|| gtk::Image::from_icon_name(Some(FALLBACK), IconSize::Button))
                     });
 
@@ -1390,6 +1396,14 @@ impl WindowButton {
             button_leave.set_tooltip_text(None);
             gtk::glib::Propagation::Proceed
         });
+    }
+
+    pub fn resize_proportional(&self, width: i32, icon_dim: i32) {
+        if self.icon_dimension.get() != icon_dim {
+            self.icon_dimension.set(icon_dim);
+            self.gtk_button.queue_resize();
+        }
+        self.resize_for_width(width);
     }
 
     pub fn resize_for_width(&self, width: i32) {

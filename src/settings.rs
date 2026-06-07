@@ -75,6 +75,10 @@ pub struct Settings {
     left_click_focus_on_press: bool,
     #[serde(default)]
     audio_indicator: AudioIndicatorConfig,
+    #[serde(default)]
+    proportional_button_width: bool,
+    #[serde(default = "default_true")]
+    proportional_icon_size: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Default)]
@@ -549,6 +553,14 @@ impl Settings {
 
     pub fn icon_size(&self) -> i32 {
         self.icon_size
+    }
+
+    pub fn proportional_button_width(&self) -> bool {
+        self.proportional_button_width
+    }
+
+    pub fn proportional_icon_size(&self) -> bool {
+        self.proportional_icon_size
     }
 
     pub fn icon_spacing(&self) -> i32 {

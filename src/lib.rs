@@ -265,6 +265,7 @@ struct ModuleInstance {
     window_pids: HashMap<u64, u32>,
     window_app_ids: HashMap<u64, String>,
     audio_window_state: HashSet<u64>,
+    output_widths: HashMap<String, i32>,
 }
 
 impl ModuleInstance {
@@ -286,6 +287,7 @@ impl ModuleInstance {
             window_pids: HashMap::new(),
             window_app_ids: HashMap::new(),
             audio_window_state: HashSet::new(),
+            output_widths: HashMap::new(),
         }
     }
 
@@ -585,13 +587,16 @@ impl ModuleInstance {
 
         if !self.buttons.is_empty() {
             let button_count = self.buttons.len() as i32;
-            let final_width = self.calculate_button_width(button_count);
+            let total_buttons_width = if self.state.settings().proportional_button_width() {
+                self.apply_proportional_widths(&snapshot)
+            } else {
+                let final_width = self.calculate_button_width(button_count);
+                for button in self.buttons.values() {
+                    button.resize_for_width(final_width);
+                }
+                final_width * button_count
+            };
 
-            for button in self.buttons.values() {
-                button.resize_for_width(final_width);
-            }
-
-            let total_buttons_width = final_width * button_count;
             let page_size = self.scrolled_window.hadjustment().page_size() as i32;
             let total_limit = self.state.settings().max_taskbar_width_for_output(self.current_output.as_deref());
             let available_width = if page_size > 0 { page_size } else { total_limit };
@@ -631,6 +636,52 @@ impl ModuleInstance {
         } else {
             max_width
         }
+    }
+
+    fn ensure_output_widths(&mut self, snapshot: &WindowSnapshot) {
+        let needs_refresh = snapshot
+            .iter()
+            .filter_map(|w| w.get_output())
+            .any(|o| !self.output_widths.contains_key(o));
+        if needs_refresh {
+            if let Ok(outputs) = self.state.compositor().query_outputs() {
+                self.output_widths = outputs
+                    .into_iter()
+                    .filter_map(|(name, o)| o.logical.map(|l| (name, l.width as i32)))
+                    .collect();
+            }
+        }
+    }
+
+    fn apply_proportional_widths(&mut self, snapshot: &WindowSnapshot) -> i32 {
+        self.ensure_output_widths(snapshot);
+
+        let output = self.current_output.as_deref();
+        let min_width = self.state.settings().min_button_width(output);
+        let max_width = self.state.settings().max_button_width(output);
+        let icon_size = self.state.settings().icon_size();
+        let scale_icons = self.state.settings().proportional_icon_size();
+        let min_icon = (icon_size / 3).max(6);
+
+        let mut total = 0;
+        for window in snapshot.iter() {
+            let Some(button) = self.buttons.get(&window.id) else { continue };
+            let fraction = window
+                .get_output()
+                .and_then(|o| self.output_widths.get(o))
+                .filter(|w| **w > 0)
+                .map(|w| (window.layout.tile_size.0 / *w as f64).clamp(0.0, 1.0))
+                .unwrap_or(1.0);
+            let width = ((fraction * max_width as f64).round() as i32).clamp(min_width, max_width);
+            let icon_dim = if scale_icons {
+                ((fraction * icon_size as f64).round() as i32).clamp(min_icon, icon_size)
+            } else {
+                icon_size
+            };
+            button.resize_proportional(width, icon_dim);
+            total += width;
+        }
+        total
     }
 
     fn handle_audio_update(&mut self, state: AudioState) {
