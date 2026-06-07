@@ -644,22 +644,19 @@ Customize appearance using Waybar's GTK CSS. The module container uses class `.n
 
 ## Limitations
 
-- **Maximized-to-edges state** cannot be visually indicated because niri IPC doesn't expose this information
+The following are constrained by what the niri compositor and its IPC currently expose:
+
+- **Maximized-to-edges state** cannot be visually indicated — niri IPC doesn't expose this state.
+- **Window previews** are not feasible — they would need per-window pixel capture, but niri 26.04
+  does not expose the `ext-image-copy-capture` protocol (tracked upstream in
+  [niri#1558](https://github.com/niri-wm/niri/issues/1558)), and the available `wlr-screencopy` only
+  captures whole outputs. Off-screen windows — exactly the ones a preview is most useful for — aren't
+  in any output's framebuffer, so they can't be captured at all. Revisit once niri#1558 lands.
+- **Minimize/scratchpad support** is not possible — niri has no native minimize state and no hidden
+  workspaces, so there is nothing to hide a window into. Community workarounds shuffle windows to a
+  bottom "scratch" workspace, which is fragile and stays visible in the overview. Tracking upstream
+  [niri#2807](https://github.com/YaLTeR/niri/pull/2807); revisit if native support lands.
 
 ## Wishlist / Future Ideas
 
-**Planned:**
-
 - Double stacked bar
-
-**Shelved (blocked by compositor limitations):**
-
-- **Window previews** — would need per-window pixel capture. niri 26.04 does not expose the
-  `ext-image-copy-capture` protocol (tracked upstream in [niri#1558](https://github.com/niri-wm/niri/issues/1558)),
-  and the available `wlr-screencopy` only captures whole outputs. Off-screen windows — exactly the
-  ones a preview is most useful for — aren't in any output's framebuffer, so they can't be captured
-  at all. Revisit once niri#1558 lands.
-- **Minimize/scratchpad support** — niri has no native minimize state and no hidden workspaces, so
-  there is nothing to hide a window into. Community workarounds shuffle windows to a bottom "scratch"
-  workspace, which is fragile and stays visible in the overview. Tracking upstream
-  [niri#2807](https://github.com/YaLTeR/niri/pull/2807); revisit if native support lands.
