@@ -71,26 +71,28 @@ impl SharedState {
         }
 
         let window_tx = tx.clone();
-        let (glib_win_tx, glib_win_rx) = glib::MainContext::channel(glib::Priority::DEFAULT);
-        glib_win_rx.attach(None, move |snapshot: WindowSnapshot| {
-            if let Err(e) = window_tx.try_send(EventMessage::WindowUpdate(snapshot)) {
-                tracing::error!(%e, "failed to forward window update");
+        let (win_tx, win_rx) = async_channel::unbounded::<WindowSnapshot>();
+        glib::spawn_future_local(async move {
+            while let Ok(snapshot) = win_rx.recv().await {
+                if let Err(e) = window_tx.try_send(EventMessage::WindowUpdate(snapshot)) {
+                    tracing::error!(%e, "failed to forward window update");
+                }
             }
-            glib::ControlFlow::Continue
         });
-        compositor::start_window_stream(glib_win_tx, self.compositor().only_current_workspace());
+        compositor::start_window_stream(win_tx, self.compositor().only_current_workspace());
 
         let workspace_tx = tx;
         let workspace_state = self.clone();
-        let (glib_ws_tx, glib_ws_rx) = glib::MainContext::channel(glib::Priority::DEFAULT);
-        glib_ws_rx.attach(None, move |workspaces: Vec<Workspace>| {
-            workspace_state.update_workspaces(workspaces);
-            if let Err(e) = workspace_tx.try_send(EventMessage::Workspaces) {
-                tracing::error!(%e, "failed to forward workspace change");
+        let (ws_tx, ws_rx) = async_channel::unbounded::<Vec<Workspace>>();
+        glib::spawn_future_local(async move {
+            while let Ok(workspaces) = ws_rx.recv().await {
+                workspace_state.update_workspaces(workspaces);
+                if let Err(e) = workspace_tx.try_send(EventMessage::Workspaces) {
+                    tracing::error!(%e, "failed to forward workspace change");
+                }
             }
-            glib::ControlFlow::Continue
         });
-        compositor::start_workspace_stream(glib_ws_tx);
+        compositor::start_workspace_stream(ws_tx);
 
         rx
     }

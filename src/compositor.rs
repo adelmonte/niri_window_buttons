@@ -3,7 +3,6 @@ use std::{
     ops::Deref,
 };
 use niri_ipc::{Action, Event, Output, Reply, Request, Workspace, socket::Socket};
-use waybar_cffi::gtk::glib;
 use crate::{errors::ModuleError, settings::Settings};
 
 #[derive(Debug, Clone)]
@@ -339,7 +338,7 @@ fn connect_socket() -> Result<Socket, ModuleError> {
     Socket::connect().map_err(ModuleError::CompositorIpc)
 }
 
-pub fn start_window_stream(tx: glib::Sender<WindowSnapshot>, filter_workspace: bool) {
+pub fn start_window_stream(tx: async_channel::Sender<WindowSnapshot>, filter_workspace: bool) {
     std::thread::spawn(move || {
         if let Err(e) = run_window_stream(&tx, filter_workspace) {
             tracing::error!(%e, "window event stream terminated");
@@ -347,7 +346,7 @@ pub fn start_window_stream(tx: glib::Sender<WindowSnapshot>, filter_workspace: b
     });
 }
 
-pub fn start_workspace_stream(tx: glib::Sender<Vec<Workspace>>) {
+pub fn start_workspace_stream(tx: async_channel::Sender<Vec<Workspace>>) {
     std::thread::spawn(move || {
         if let Err(e) = run_workspace_stream(&tx) {
             tracing::error!(%e, "workspace event stream terminated");
@@ -355,7 +354,7 @@ pub fn start_workspace_stream(tx: glib::Sender<Vec<Workspace>>) {
     });
 }
 
-fn run_workspace_stream(tx: &glib::Sender<Vec<Workspace>>) -> Result<(), ModuleError> {
+fn run_workspace_stream(tx: &async_channel::Sender<Vec<Workspace>>) -> Result<(), ModuleError> {
     const MAX_BACKOFF_SECS: u64 = 30;
     let mut backoff_secs = 1u64;
 
@@ -374,7 +373,7 @@ fn run_workspace_stream(tx: &glib::Sender<Vec<Workspace>>) -> Result<(), ModuleE
     }
 }
 
-fn try_run_workspace_stream(tx: &glib::Sender<Vec<Workspace>>) -> Result<(), ModuleError> {
+fn try_run_workspace_stream(tx: &async_channel::Sender<Vec<Workspace>>) -> Result<(), ModuleError> {
     let mut socket = connect_socket()?;
     let response = socket.send(Request::EventStream).map_err(ModuleError::CompositorIpc)?;
     validate_handled(response)?;
@@ -385,7 +384,7 @@ fn try_run_workspace_stream(tx: &glib::Sender<Vec<Workspace>>) -> Result<(), Mod
     loop {
         match event_reader() {
             Ok(Event::WorkspacesChanged { workspaces }) => {
-                tx.send(workspaces).map_err(|_| ModuleError::SnapshotChannelClosed)?;
+                tx.send_blocking(workspaces).map_err(|_| ModuleError::SnapshotChannelClosed)?;
             }
             Ok(_) => {}
             Err(e) => {
@@ -395,7 +394,7 @@ fn try_run_workspace_stream(tx: &glib::Sender<Vec<Workspace>>) -> Result<(), Mod
     }
 }
 
-fn run_window_stream(tx: &glib::Sender<WindowSnapshot>, filter_workspace: bool) -> Result<(), ModuleError> {
+fn run_window_stream(tx: &async_channel::Sender<WindowSnapshot>, filter_workspace: bool) -> Result<(), ModuleError> {
     const MAX_BACKOFF_SECS: u64 = 30;
     let mut backoff_secs = 1u64;
     let mut window_state = WindowTracker::new();
@@ -416,7 +415,7 @@ fn run_window_stream(tx: &glib::Sender<WindowSnapshot>, filter_workspace: bool) 
 }
 
 fn try_run_window_stream(
-    tx: &glib::Sender<WindowSnapshot>,
+    tx: &async_channel::Sender<WindowSnapshot>,
     window_state: &mut WindowTracker,
     filter_workspace: bool,
 ) -> Result<(), ModuleError> {
@@ -431,7 +430,7 @@ fn try_run_window_stream(
         match event_reader() {
             Ok(event) => {
                 if let Some(snapshot) = window_state.process_event(event, filter_workspace) {
-                    tx.send(snapshot).map_err(|_| ModuleError::SnapshotChannelClosed)?;
+                    tx.send_blocking(snapshot).map_err(|_| ModuleError::SnapshotChannelClosed)?;
                 }
             }
             Err(e) => {
