@@ -650,7 +650,6 @@ Customize appearance using Waybar's GTK CSS. The module container uses class `.n
 
 **Planned:**
 
-- Window grouping by app
 - Double stacked bar
 
 **Shelved (blocked by compositor limitations):**
