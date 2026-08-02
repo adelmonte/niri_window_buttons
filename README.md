@@ -56,6 +56,7 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
     "show_window_titles": true,
     "truncate_titles": true,
     "allow_title_linebreaks": false,
+    "vertical": false,
     "button_alignment": "left",
     "show_tooltip": true,
     "tooltip_delay": 200,
@@ -174,6 +175,7 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
 | `show_window_titles` | Display window titles next to icons | `true` |
 | `truncate_titles` | Truncate long titles with ellipsis | `true` |
 | `allow_title_linebreaks` | Allow line breaks in window titles (expands button height) | `false` |
+| `vertical` | Layout buttons vertically instead of horizontally | `false` |
 | `drag_style` | Drag reorder style: `"browser"` (grabbed button follows cursor) or `"classic"` (GTK drag-and-drop) | `"browser"` |
 | `drag_hover_focus` | Focus window when external drag hovers over button | `true` |
 | `drag_hover_focus_delay` | Delay in milliseconds before hover triggers focus | `500` |
