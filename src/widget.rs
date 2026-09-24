@@ -100,6 +100,8 @@ pub struct WindowButton {
     tooltip_timeout: Rc<RefCell<Option<gtk::glib::SourceId>>>,
     skip_clicked: Rc<RefCell<bool>>,
     overlay: gtk::Overlay,
+    notification_urgent: Rc<Cell<bool>>,
+    compositor_urgent: Rc<Cell<bool>>,
 }
 
 impl Debug for WindowButton {
@@ -226,6 +228,8 @@ impl WindowButton {
             tooltip_timeout: Rc::new(RefCell::new(None)),
             skip_clicked: Rc::new(RefCell::new(false)),
             overlay,
+            notification_urgent: Rc::new(Cell::new(false)),
+            compositor_urgent: Rc::new(Cell::new(false)),
         };
 
         button.setup_click_handlers(window.id);
@@ -242,7 +246,9 @@ impl WindowButton {
         let style_ctx = self.gtk_button.style_context();
         if is_focused {
             style_ctx.add_class("focused");
-            style_ctx.remove_class("urgent");
+            self.notification_urgent.set(false);
+            self.compositor_urgent.set(false);
+            self.sync_urgent_class();
         } else {
             style_ctx.remove_class("focused");
         }
@@ -300,7 +306,23 @@ impl WindowButton {
 
     #[tracing::instrument(level = "TRACE")]
     pub fn mark_urgent(&self) {
-        self.gtk_button.style_context().add_class("urgent");
+        self.notification_urgent.set(true);
+        self.sync_urgent_class();
+    }
+
+    pub fn update_compositor_urgency(&self, is_urgent: bool) {
+        if self.compositor_urgent.replace(is_urgent) != is_urgent {
+            self.sync_urgent_class();
+        }
+    }
+
+    fn sync_urgent_class(&self) {
+        let style_ctx = self.gtk_button.style_context();
+        if self.notification_urgent.get() || self.compositor_urgent.get() {
+            style_ctx.add_class("urgent");
+        } else {
+            style_ctx.remove_class("urgent");
+        }
     }
 
     pub fn get_widget(&self) -> &gtk::Button {

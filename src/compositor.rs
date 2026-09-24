@@ -578,6 +578,13 @@ impl WindowTracker {
                     tracing::debug!("active window map: {:?}", active_per_workspace);
                 }
             }
+            Event::WindowUrgencyChanged { id, urgent } => {
+                if let Some(Ready { windows, .. }) = &mut self.state {
+                    if let Some(window) = windows.get_mut(&id) {
+                        window.is_urgent = urgent;
+                    }
+                }
+            }
             Event::WindowLayoutsChanged { changes } => {
                 if let Some(Ready { windows, .. }) = &mut self.state {
                     for (win_id, layout) in changes {

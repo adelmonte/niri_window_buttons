@@ -608,7 +608,7 @@ Customize appearance using Waybar's GTK CSS. The module container uses class `.n
 |-------|-------------|
 | `.focused` | Currently focused window |
 | `.selected` | Multi-selected window |
-| `.urgent` | Window with pending notification |
+| `.urgent` | Window with pending notification or marked urgent by niri |
 | `.dragging` | Window being dragged (classic drag style) |
 | `.drag-over` | Valid drop target during external drag |
 | `.audio-indicator` | Audio indicator icon inside each button |
