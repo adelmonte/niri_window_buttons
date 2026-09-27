@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use async_channel::Sender;
 use futures::StreamExt;
 use niri_ipc::Workspace;
@@ -21,6 +21,8 @@ struct StateInner {
     icon_resolver: IconResolver,
     compositor: CompositorClient,
     workspaces: Mutex<HashMap<u64, (u8, Option<String>)>>,
+    drag_active: AtomicBool,
+    event_tx: Mutex<Option<Sender<EventMessage>>>,
 }
 
 impl SharedState {
@@ -30,6 +32,8 @@ impl SharedState {
             icon_resolver: IconResolver::new(),
             settings,
             workspaces: Mutex::new(HashMap::new()),
+            drag_active: AtomicBool::new(false),
+            event_tx: Mutex::new(None),
         }))
     }
 
@@ -51,6 +55,23 @@ impl SharedState {
         self.0.workspaces.lock().ok()?.get(&id).cloned()
     }
 
+    pub fn drag_active(&self) -> bool {
+        self.0.drag_active.load(Ordering::Relaxed)
+    }
+
+    pub fn begin_drag(&self) {
+        self.0.drag_active.store(true, Ordering::Relaxed);
+    }
+
+    pub fn end_drag(&self, committed: bool) {
+        self.0.drag_active.store(false, Ordering::Relaxed);
+        if let Some(tx) = self.0.event_tx.lock().ok().and_then(|g| g.clone()) {
+            if let Err(e) = tx.try_send(EventMessage::DragEnded { committed }) {
+                tracing::error!(%e, "failed to forward drag end");
+            }
+        }
+    }
+
     pub fn icon_resolver(&self) -> &IconResolver {
         &self.0.icon_resolver
     }
@@ -61,6 +82,9 @@ impl SharedState {
 
     pub fn create_event_stream(&self) -> async_channel::Receiver<EventMessage> {
         let (tx, rx) = async_channel::unbounded();
+        if let Ok(mut event_tx) = self.0.event_tx.lock() {
+            *event_tx = Some(tx.clone());
+        }
 
         if self.settings().notifications_enabled() {
             glib::spawn_future_local(forward_notifications(tx.clone()));
@@ -103,6 +127,7 @@ pub enum EventMessage {
     WindowUpdate(WindowSnapshot),
     Workspaces,
     AudioUpdate(audio::AudioState),
+    DragEnded { committed: bool },
 }
 
 async fn forward_audio_updates(tx: Sender<EventMessage>) {

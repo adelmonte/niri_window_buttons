@@ -256,6 +256,7 @@ struct ModuleInstance {
     main_container: gtk::Box,
     alignment_spacer: gtk::Box,
     previous_snapshot: Option<WindowSnapshot>,
+    deferred_snapshot: Option<WindowSnapshot>,
     current_output: Option<String>,
     previous_focused: Option<u64>,
     display_filter: screen::DisplayFilter,
@@ -278,6 +279,7 @@ impl ModuleInstance {
             main_container,
             alignment_spacer,
             previous_snapshot: None,
+            deferred_snapshot: None,
             current_output: None,
             previous_focused: None,
             display_filter: screen::DisplayFilter::ShowAll,
@@ -301,8 +303,23 @@ impl ModuleInstance {
                 EventMessage::Notification(notif) => self.handle_notification(notif).await,
                 EventMessage::AudioUpdate(state) => self.handle_audio_update(state),
                 EventMessage::WindowUpdate(snapshot) => {
+                    if self.state.drag_active() {
+                        self.deferred_snapshot = Some(snapshot);
+                        continue;
+                    }
                     let filter = self.display_filter.clone();
                     self.handle_window_update(snapshot, filter).await;
+                }
+                EventMessage::DragEnded { committed } => {
+                    let snapshot = match self.deferred_snapshot.take() {
+                        Some(snapshot) => Some(snapshot),
+                        None if !committed => self.previous_snapshot.clone(),
+                        None => None,
+                    };
+                    if let Some(snapshot) = snapshot {
+                        let filter = self.display_filter.clone();
+                        self.handle_window_update(snapshot, filter).await;
+                    }
                 }
                 EventMessage::Workspaces => {
                     let updated_filter = self.determine_display_filter().await;
@@ -310,7 +327,11 @@ impl ModuleInstance {
                     self.display_filter = updated_filter;
 
                     if filter_changed && self.update_output_and_resize().await {
-                        if let Some(snapshot) = self.previous_snapshot.clone() {
+                        if self.state.drag_active() {
+                            if self.deferred_snapshot.is_none() {
+                                self.deferred_snapshot = self.previous_snapshot.clone();
+                            }
+                        } else if let Some(snapshot) = self.previous_snapshot.clone() {
                             self.handle_window_update(snapshot, screen::DisplayFilter::ShowAll).await;
                         }
                     }

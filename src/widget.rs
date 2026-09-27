@@ -424,6 +424,7 @@ impl WindowButton {
 
         self.gtk_button.connect_button_press_event(move |_btn, event| {
             if event.button() == 1 {
+                *skip_clicked_press.borrow_mut() = false;
                 let modifier_held = Self::check_modifier_static(state_press.settings().multi_select_modifier());
                 if modifier_held {
                     *skip_clicked_press.borrow_mut() = true;
@@ -753,9 +754,11 @@ impl WindowButton {
         let drag_start_press = drag_start.clone();
         let drag_group_press = drag_group.clone();
         let selection_press = self.selection.clone();
-        let skip_for_press = skip.clone();
+        let state_press = self.state.clone();
         self.gtk_button.connect_button_press_event(move |btn, event| {
-            if event.button() == 1 && !*skip_for_press.borrow() {
+            if event.button() == 1
+                && !Self::check_modifier_static(state_press.settings().multi_select_modifier())
+            {
                 if let Some(parent) = btn.parent() {
                     if let Ok(container) = parent.downcast::<gtk::Box>() {
                         let (ex, _) = event.position();
@@ -789,6 +792,7 @@ impl WindowButton {
         let ghost_drawing_motion = ghost_drawing.clone();
         let overlay_motion = overlay.clone();
         let skip_motion = skip.clone();
+        let state_motion = state.clone();
         self.gtk_button.connect_motion_notify_event(move |btn, event| {
             let Some(parent) = btn.parent() else { return gtk::glib::Propagation::Proceed; };
             let Ok(container) = parent.downcast::<gtk::Box>() else { return gtk::glib::Propagation::Proceed; };
@@ -804,6 +808,7 @@ impl WindowButton {
                     if (cx - press_cx).abs() > 5.0 {
                         *is_dragging_motion.borrow_mut() = true;
                         *skip_motion.borrow_mut() = true;
+                        state_motion.begin_drag();
 
                         let alloc = btn.allocation();
                         let btn_w = alloc.width();
@@ -946,53 +951,68 @@ impl WindowButton {
         let ghost_drawing_release = ghost_drawing.clone();
         let ghost_surface_release = ghost_surface.clone();
         let overlay_release = overlay.clone();
-        self.gtk_button.connect_button_release_event(move |btn, event| {
-            if event.button() == 1 {
-                let was_dragging = *is_dragging_release.borrow();
-                *is_dragging_release.borrow_mut() = false;
+        let committed_offset_release = committed_offset.clone();
+        let finish_drag = Rc::new(move |btn: &gtk::Button, commit: bool| {
+            let was_dragging = *is_dragging_release.borrow();
+            *is_dragging_release.borrow_mut() = false;
+            committed_offset_release.set(0);
 
-                if was_dragging {
-                    if let Some(da) = ghost_drawing_release.borrow_mut().take() {
-                        overlay_release.remove(&da);
+            if was_dragging {
+                if let Some(da) = ghost_drawing_release.borrow_mut().take() {
+                    overlay_release.remove(&da);
+                }
+                ghost_surface_release.borrow_mut().take();
+
+                let group_opt = drag_group_release.borrow_mut().take();
+
+                if let Some(ref group) = group_opt {
+                    for (_, member_btn) in &group.members {
+                        member_btn.set_opacity(1.0);
                     }
-                    ghost_surface_release.borrow_mut().take();
+                } else {
+                    btn.set_opacity(1.0);
+                }
 
-                    let group_opt = drag_group_release.borrow_mut().take();
-
+                let container = btn.parent().and_then(|p| p.downcast::<gtk::Box>().ok()).filter(|_| commit);
+                if let Some(container) = container {
+                    let keep_stacked = Self::check_modifier_static(state.settings().multi_select_modifier());
                     if let Some(ref group) = group_opt {
-                        for (_, member_btn) in &group.members {
-                            member_btn.set_opacity(1.0);
+                        let moves: Vec<(u64, usize)> = group
+                            .members
+                            .iter()
+                            .map(|(wid, b)| (*wid, container.child_position(b).max(1) as usize))
+                            .collect();
+                        if let Err(e) = state.compositor().reposition_windows_group(&moves, keep_stacked) {
+                            tracing::error!("group reposition failed: {}", e);
                         }
-                    } else {
-                        btn.set_opacity(1.0);
-                    }
-
-                    if let Some(container) = btn.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) {
-                        let keep_stacked = Self::check_modifier_static(state.settings().multi_select_modifier());
-                        if let Some(ref group) = group_opt {
-                            let moves: Vec<(u64, usize)> = group
-                                .members
-                                .iter()
-                                .map(|(wid, b)| (*wid, container.child_position(b).max(1) as usize))
-                                .collect();
-                            if let Err(e) = state.compositor().reposition_windows_group(&moves, keep_stacked) {
-                                tracing::error!("group reposition failed: {}", e);
-                            }
-                            clear_selection(&selection_release);
-                        } else if let Some((_, start_slot, _)) = *drag_start_release.borrow() {
-                            let final_slot = container.child_position(btn);
-                            let delta = final_slot - start_slot;
-                            if delta != 0 {
-                                if let Err(e) = state.compositor().reposition_window(window_id, delta, keep_stacked) {
-                                    tracing::error!("reposition failed: {}", e);
-                                }
+                        clear_selection(&selection_release);
+                    } else if let Some((_, start_slot, _)) = *drag_start_release.borrow() {
+                        let final_slot = container.child_position(btn);
+                        let delta = final_slot - start_slot;
+                        if delta != 0 {
+                            if let Err(e) = state.compositor().reposition_window(window_id, delta, keep_stacked) {
+                                tracing::error!("reposition failed: {}", e);
                             }
                         }
                     }
                 }
-
-                *drag_start_release.borrow_mut() = None;
+                state.end_drag(commit);
             }
+
+            *drag_start_release.borrow_mut() = None;
+            drag_group_release.borrow_mut().take();
+        });
+
+        let finish_on_release = finish_drag.clone();
+        self.gtk_button.connect_button_release_event(move |btn, event| {
+            if event.button() == 1 {
+                finish_on_release(btn, true);
+            }
+            gtk::glib::Propagation::Proceed
+        });
+
+        self.gtk_button.connect_grab_broken_event(move |btn, _| {
+            finish_drag(btn, false);
             gtk::glib::Propagation::Proceed
         });
 
