@@ -181,6 +181,7 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
 | `tooltip_delay` | Delay in milliseconds before tooltip appears | `300` |
 | `button_alignment` | Align buttons within the taskbar: `"left"`, `"center"`, or `"right"` | `"left"` |
 | `left_click_focus_on_press` | Focus unfocused windows on mouse-down instead of mouse-up. When `false`, dragging an unfocused window reorders it without stealing focus | `false` |
+| `cursor` | Waybar's module cursor option. When unset, the module shows a pointer cursor over buttons and the default cursor elsewhere. When set, cursor handling is left to Waybar, which applies it to the whole module | unset |
 
 ### Size Controls
 

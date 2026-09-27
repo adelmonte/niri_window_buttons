@@ -79,6 +79,8 @@ pub struct Settings {
     proportional_button_width: bool,
     #[serde(default = "default_true")]
     proportional_icon_size: bool,
+    #[serde(default)]
+    cursor: Option<serde::de::IgnoredAny>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Default)]
@@ -627,6 +629,10 @@ impl Settings {
 
     pub fn button_alignment(&self) -> ButtonAlignment {
         self.button_alignment
+    }
+
+    pub fn cursor_configured(&self) -> bool {
+        self.cursor.is_some()
     }
 
     pub fn left_click_focus_on_press(&self) -> bool {

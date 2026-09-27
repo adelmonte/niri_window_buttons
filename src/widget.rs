@@ -2,7 +2,7 @@ use std::{cell::{Cell, RefCell}, collections::HashMap, fmt::Debug, path::PathBuf
 use waybar_cffi::gtk::{
     self as gtk, CssProvider, EventBox, IconLookupFlags, IconSize, IconTheme, Menu, MenuItem, Orientation, ReliefStyle,
     gdk_pixbuf::Pixbuf,
-    prelude::{AdjustmentExt, BoxExt, ButtonExt, Cast, ContainerExt, CssProviderExt, DragContextExtManual, GdkPixbufExt, GtkMenuExt, GtkMenuItemExt, IconThemeExt, LabelExt, MenuShellExt, OverlayExt, StyleContextExt, WidgetExt, WidgetExtManual},
+    prelude::{AdjustmentExt, BoxExt, ButtonExt, Cast, IsA, ContainerExt, CssProviderExt, DragContextExtManual, GdkPixbufExt, GtkMenuExt, GtkMenuItemExt, IconThemeExt, LabelExt, MenuShellExt, OverlayExt, StyleContextExt, WidgetExt, WidgetExtManual},
     DestDefaults, TargetEntry, TargetFlags,
 };
 use crate::audio::SinkInput;
@@ -128,6 +128,19 @@ thread_local! {
     static TASKBAR_ADJUSTMENT: std::cell::RefCell<Option<gtk::Adjustment>> = const { std::cell::RefCell::new(None) };
 }
 
+pub fn set_cursor_on_realize<W: IsA<gtk::Widget>>(
+    widget: &W,
+    cursor_name: &'static str,
+    window_of: fn(&W) -> Option<gtk::gdk::Window>,
+) {
+    widget.connect_realize(move |w| {
+        if let Some(window) = window_of(w) {
+            let cursor = gtk::gdk::Cursor::from_name(&window.display(), cursor_name);
+            window.set_cursor(cursor.as_ref());
+        }
+    });
+}
+
 pub fn set_taskbar_adjustment(adj: gtk::Adjustment) {
     TASKBAR_ADJUSTMENT.with(|cell| {
         *cell.borrow_mut() = Some(adj);
@@ -237,6 +250,9 @@ impl WindowButton {
         button.setup_drag_reorder();
         button.setup_icon_rendering(icon_location);
         button.setup_tooltip();
+        if !state.settings().cursor_configured() {
+            set_cursor_on_realize(&button.gtk_button, "pointer", |b| b.event_window());
+        }
 
         button
     }

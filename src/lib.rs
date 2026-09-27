@@ -8,7 +8,7 @@ use settings::{Settings, ButtonAlignment};
 use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan};
 use waybar_cffi::{
     Module,
-    gtk::{self, Orientation, Overlay, ReliefStyle, ScrolledWindow, gio, glib::MainContext, traits::{AdjustmentExt, BoxExt, ButtonExt, ContainerExt, ScrolledWindowExt, StyleContextExt, WidgetExt}, gdk::EventMask, prelude::WidgetExtManual},
+    gtk::{self, Orientation, Overlay, ReliefStyle, ScrolledWindow, gio, glib::MainContext, traits::{AdjustmentExt, BinExt, BoxExt, ButtonExt, ContainerExt, ScrolledWindowExt, StyleContextExt, WidgetExt}, gdk::EventMask, prelude::{Cast, WidgetExtManual}},
     waybar_module,
 };
 
@@ -29,7 +29,7 @@ use errors::ModuleError;
 use global::{EventMessage, SharedState};
 use notifications::NotificationData;
 use system::ProcessInfo;
-use widget::{WindowButton, SelectionState, create_selection_state, clear_selection, set_taskbar_adjustment};
+use widget::{WindowButton, SelectionState, create_selection_state, clear_selection, set_cursor_on_realize, set_taskbar_adjustment};
 
 static LOGGING: LazyLock<()> = LazyLock::new(|| {
     if let Err(e) = tracing_subscriber::fmt()
@@ -97,6 +97,12 @@ async fn initialize_module(info: &waybar_cffi::InitInfo, state: SharedState) -> 
     drag_overlay.add(&button_container);
     scrolled.add(&drag_overlay);
 
+    if !state.settings().cursor_configured() {
+        if let Some(viewport) = scrolled.child().and_then(|c| c.downcast::<gtk::Viewport>().ok()) {
+            set_cursor_on_realize(&viewport, "default", |v| v.window());
+        }
+    }
+
     set_taskbar_adjustment(scrolled.hadjustment());
 
     let scrolled_for_scroll = scrolled.clone();
@@ -137,6 +143,11 @@ async fn initialize_module(info: &waybar_cffi::InitInfo, state: SharedState) -> 
     right_arrow.set_no_show_all(true);
     right_arrow.hide();
     
+    if !state.settings().cursor_configured() {
+        set_cursor_on_realize(&left_arrow, "pointer", |b| b.event_window());
+        set_cursor_on_realize(&right_arrow, "pointer", |b| b.event_window());
+    }
+
     main_container.pack_start(&left_arrow, false, false, 0);
     main_container.pack_start(&scrolled, true, true, 0);
     main_container.pack_start(&right_arrow, false, false, 0);
