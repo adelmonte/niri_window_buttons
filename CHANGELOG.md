@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-09-27
+
+### Fixed
+- Browser-style drag: buttons no longer become undraggable or need a second click after a drag ends outside the button
+- Browser-style drag: each drag now starts from a clean slot offset instead of the previous drag's
+- Browser-style drag: a lost pointer grab now cancels the drag cleanly instead of leaving a stuck ghost
+- Browser-style drag: unfocused buttons can be dragged when `left_click_focus_on_press` is enabled
+- Window updates from niri no longer reorder buttons in the middle of a drag
+
 ## [0.4.4] - 2026-09-24
 
 ### Added
