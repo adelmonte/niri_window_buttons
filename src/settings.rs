@@ -64,6 +64,10 @@ pub struct Settings {
     #[serde(default = "default_true")]
     truncate_titles: bool,
     #[serde(default)]
+    title_fade: TitleFade,
+    #[serde(default = "default_title_fade_width")]
+    title_fade_width: i32,
+    #[serde(default)]
     allow_title_linebreaks: bool,
     #[serde(default = "default_true")]
     show_tooltip: bool,
@@ -130,6 +134,15 @@ pub enum ButtonAlignment {
     #[default]
     Left,
     Center,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TitleFade {
+    #[default]
+    None,
+    Left,
     Right,
 }
 
@@ -377,6 +390,7 @@ fn default_middle_click() -> ClickAction { ClickAction::Action(WindowAction::Clo
 
 fn default_drag_hover_delay() -> u32 { 500 }
 fn default_tooltip_delay() -> u32 { 300 }
+fn default_title_fade_width() -> i32 { 22 }
 fn default_audio_playing_icon() -> String { "󰕾".to_string() }
 fn default_audio_muted_icon() -> String { "󰖁".to_string() }
 
@@ -613,6 +627,14 @@ impl Settings {
 
     pub fn truncate_titles(&self) -> bool {
         self.truncate_titles
+    }
+
+    pub fn title_fade(&self) -> TitleFade {
+        self.title_fade
+    }
+
+    pub fn title_fade_width(&self) -> i32 {
+        self.title_fade_width
     }
 
     pub fn allow_title_linebreaks(&self) -> bool {

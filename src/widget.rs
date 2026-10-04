@@ -7,7 +7,7 @@ use waybar_cffi::gtk::{
 };
 use crate::audio::SinkInput;
 use crate::global::SharedState;
-use crate::settings::{DragStyle, ModifierKey, MultiSelectAction};
+use crate::settings::{DragStyle, ModifierKey, MultiSelectAction, TitleFade};
 
 pub type SelectionState = Rc<RefCell<HashMap<u64, gtk::Button>>>;
 
@@ -175,8 +175,18 @@ impl WindowButton {
 
         let title_label = gtk::Label::new(None);
         let truncate_titles = state.settings().truncate_titles();
+        let title_fade = state.settings().title_fade();
         if truncate_titles {
-            title_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            // Fading reuses Pango ellipsizing for sizing; the ellipsis itself is never drawn.
+            let mode = if title_fade == TitleFade::Left {
+                gtk::pango::EllipsizeMode::Start
+            } else {
+                gtk::pango::EllipsizeMode::End
+            };
+            title_label.set_ellipsize(mode);
+            if title_fade != TitleFade::None {
+                Self::setup_title_fade(&title_label, title_fade, state.settings().title_fade_width());
+            }
         } else {
             title_label.set_ellipsize(gtk::pango::EllipsizeMode::None);
         }
@@ -1332,6 +1342,54 @@ impl WindowButton {
                     ctx.drag_finish(false, false, time);
                 }
             }
+        });
+    }
+
+    fn setup_title_fade(label: &gtk::Label, side: TitleFade, fade_width: i32) {
+        label.connect_draw(move |label, cr| {
+            let Some(layout) = label.layout() else {
+                return gtk::glib::Propagation::Proceed;
+            };
+            if !layout.is_ellipsized() {
+                return gtk::glib::Propagation::Proceed;
+            }
+
+            let full = layout.copy();
+            full.set_ellipsize(gtk::pango::EllipsizeMode::None);
+            full.set_width(-1);
+
+            let allocation = label.allocation();
+            let width = f64::from(allocation.width());
+            let (text_width, _) = full.pixel_size();
+            let (offset_x, offset_y) = label.layout_offsets();
+            let pad = f64::from(offset_x - allocation.x());
+            let x = match side {
+                TitleFade::Left => width - f64::from(text_width) - pad,
+                _ => pad,
+            };
+            let y = f64::from(offset_y - allocation.y());
+
+            let stop = (f64::from(fade_width) / width).clamp(0.0, 1.0);
+            let gradient = gtk::cairo::LinearGradient::new(0.0, 0.0, width, 0.0);
+            match side {
+                TitleFade::Left => {
+                    gradient.add_color_stop_rgba(0.0, 0.0, 0.0, 0.0, 0.0);
+                    gradient.add_color_stop_rgba(stop, 0.0, 0.0, 0.0, 1.0);
+                }
+                _ => {
+                    gradient.add_color_stop_rgba(1.0 - stop, 0.0, 0.0, 0.0, 1.0);
+                    gradient.add_color_stop_rgba(1.0, 0.0, 0.0, 0.0, 0.0);
+                }
+            }
+
+            cr.push_group();
+            gtk::render_layout(&label.style_context(), cr, x, y, &full);
+            if cr.pop_group_to_source().is_ok() {
+                if let Err(e) = cr.mask(&gradient) {
+                    tracing::warn!(%e, "title fade mask failed");
+                }
+            }
+            gtk::glib::Propagation::Stop
         });
     }
 

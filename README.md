@@ -55,6 +55,8 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
     "only_current_workspace": true,
     "show_window_titles": true,
     "truncate_titles": true,
+    "title_fade": "none",
+    "title_fade_width": 22,
     "allow_title_linebreaks": false,
     "button_alignment": "left",
     "show_tooltip": true,
@@ -173,6 +175,8 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
 | `only_current_workspace` | Show only current workspace windows | `false` |
 | `show_window_titles` | Display window titles next to icons | `true` |
 | `truncate_titles` | Truncate long titles with ellipsis | `true` |
+| `title_fade` | Fade truncated titles out instead of showing an ellipsis: `"none"`, `"right"` (cut the end, like Firefox tabs) or `"left"` (cut the start, keeping the end of the title visible). Needs `truncate_titles` | `"none"` |
+| `title_fade_width` | Width of the fade in pixels | `22` |
 | `allow_title_linebreaks` | Allow line breaks in window titles (expands button height) | `false` |
 | `drag_style` | Drag reorder style: `"browser"` (grabbed button follows cursor) or `"classic"` (GTK drag-and-drop) | `"browser"` |
 | `drag_hover_focus` | Focus window when external drag hovers over button | `true` |
