@@ -605,7 +605,9 @@ The indicator can be styled via CSS using the `.audio-indicator` class (see [Sty
 
 ## Styling
 
-Customize appearance using Waybar's GTK CSS. The module container uses class `.niri_window_buttons` and contains `button` elements.
+Customize appearance using Waybar's GTK CSS. The buttons are `button` elements inside a box with class `.niri-window-buttons`; select them with `.niri-window-buttons > button`.
+
+Waybar does not give CFFI modules a `#cffi.<name>` ID, so selectors such as `#cffi\.niri_window_buttons button` match nothing.
 
 **Available CSS Classes:**
 
@@ -622,28 +624,24 @@ Customize appearance using Waybar's GTK CSS. The module container uses class `.n
 **Example:**
 
 ```css
-#cffi\.niri_window_buttons button {
+.niri-window-buttons > button {
   padding: 4px 8px;
   border-radius: 4px;
   transition: background 200ms;
 }
 
-#cffi\.niri_window_buttons button.focused {
+.niri-window-buttons > button.focused {
   background: rgba(255, 255, 255, 0.3);
   border-bottom: 3px solid #81a1c1;
 }
 
-#cffi\.niri_window_buttons button.selected {
+.niri-window-buttons > button.selected {
   background: rgba(136, 192, 208, 0.3);
   border: 1px dashed #88c0d0;
 }
 
-#cffi\.niri_window_buttons button.urgent {
+.niri-window-buttons > button.urgent {
   background: rgba(191, 97, 106, 0.4);
-}
-
-#cffi\.niri_window_buttons button.unread {
-  color: #ebcb8b;
 }
 ```
 
