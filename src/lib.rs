@@ -81,9 +81,8 @@ async fn initialize_module(info: &waybar_cffi::InitInfo, state: SharedState) -> 
     scrolled.set_overlay_scrolling(false);
     scrolled.set_propagate_natural_width(false);
 
-    let initial_max_width = state.settings().max_taskbar_width_for_output(None);
-    main_container.set_size_request(initial_max_width, -1);
     main_container.set_hexpand(false);
+    apply_taskbar_sizing(state.settings(), None, &main_container, &scrolled);
 
     let button_container = gtk::Box::new(Orientation::Horizontal, 0);
     button_container.style_context().add_class("niri-window-buttons");
@@ -224,6 +223,19 @@ async fn initialize_module(info: &waybar_cffi::InitInfo, state: SharedState) -> 
     Ok(())
 }
 
+fn apply_taskbar_sizing(settings: &Settings, output: Option<&str>, main_container: &gtk::Box, scrolled: &ScrolledWindow) {
+    let max_width = settings.max_taskbar_width_for_output(output);
+    if settings.fill_available_width(output) {
+        main_container.set_size_request(-1, -1);
+        scrolled.set_propagate_natural_width(true);
+        scrolled.set_max_content_width(max_width);
+    } else {
+        main_container.set_size_request(max_width, -1);
+        scrolled.set_propagate_natural_width(false);
+        scrolled.set_max_content_width(-1);
+    }
+}
+
 fn smooth_scroll_to(adjustment: &gtk::Adjustment, target: f64) {
     let start = adjustment.value();
     let distance = target - start;
@@ -357,8 +369,7 @@ impl ModuleInstance {
         if self.current_output.as_deref() != new_output.as_deref() {
             self.current_output = new_output.clone();
 
-            let max_width = self.state.settings().max_taskbar_width_for_output(new_output.as_deref());
-            self.main_container.set_size_request(max_width, -1);
+            apply_taskbar_sizing(self.state.settings(), new_output.as_deref(), &self.main_container, &self.scrolled_window);
 
             return true;
         }
@@ -633,7 +644,9 @@ impl ModuleInstance {
             let page_size = self.scrolled_window.hadjustment().page_size() as i32;
             let total_limit = self.state.settings().max_taskbar_width_for_output(self.current_output.as_deref());
             let available_width = if page_size > 0 { page_size } else { total_limit };
+            let fill = self.state.settings().fill_available_width(self.current_output.as_deref());
             let spacer_width = match self.state.settings().button_alignment() {
+                _ if fill => 0,
                 ButtonAlignment::Left => 0,
                 ButtonAlignment::Center => ((available_width - total_buttons_width) / 2).max(0),
                 ButtonAlignment::Right => (available_width - total_buttons_width).max(0),

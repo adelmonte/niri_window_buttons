@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `fill_available_width` option: the taskbar is sized to its buttons up to `max_taskbar_width` and shrinks (scrolling) when other modules in the bar need the space, instead of always taking a fixed `max_taskbar_width`
 - `title_fade` option: truncated titles fade out on the right or left edge instead of ending in an ellipsis, with `title_fade_width` to set the fade length
 
 ## [0.4.6] - 2026-09-27

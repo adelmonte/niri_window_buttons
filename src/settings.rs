@@ -11,6 +11,8 @@ pub struct OutputDimensions {
     pub max_button_width: Option<i32>,
     #[serde(default)]
     pub max_taskbar_width: Option<i32>,
+    #[serde(default)]
+    pub fill_available_width: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -37,6 +39,8 @@ pub struct Settings {
     max_taskbar_width: i32,
     #[serde(default)]
     max_taskbar_width_per_output: HashMap<String, i32>,
+    #[serde(default)]
+    fill_available_width: bool,
     #[serde(default)]
     dimensions_per_output: HashMap<String, OutputDimensions>,
     #[serde(default = "default_scroll_arrow_left")]
@@ -591,6 +595,13 @@ impl Settings {
                     .or_else(|| self.max_taskbar_width_per_output.get(name).copied())
             })
             .unwrap_or(self.max_taskbar_width)
+    }
+
+    pub fn fill_available_width(&self, output: Option<&str>) -> bool {
+        output
+            .and_then(|name| self.dimensions_per_output.get(name))
+            .and_then(|dims| dims.fill_available_width)
+            .unwrap_or(self.fill_available_width)
     }
 
     pub fn scroll_arrow_left(&self) -> &str {

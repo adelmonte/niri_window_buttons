@@ -194,6 +194,7 @@ The compiled module will be at `target/release/libniri_window_buttons.so`.
 | `min_button_width` | Minimum button width in pixels | `150` |
 | `max_button_width` | Maximum button width in pixels | `235` |
 | `max_taskbar_width` | Total taskbar width limit in pixels | `1200` |
+| `fill_available_width` | Size the taskbar to its buttons, up to `max_taskbar_width`, shrinking when other modules need the space | `false` |
 | `icon_size` | Icon dimensions in pixels | `24` |
 | `icon_spacing` | Space between icon and title in pixels | `6` |
 | `proportional_button_width` | Size each button to match its window's on-screen width | `false` |
@@ -216,6 +217,29 @@ to keep icons at a fixed `icon_size` while the button widths still scale.
   "proportional_icon_size": true
 }
 ```
+
+#### Fill Available Width
+
+By default the taskbar always takes exactly `max_taskbar_width`, even when the bar has more room or
+less. With `fill_available_width` enabled, the taskbar is only as wide as its buttons, up to
+`max_taskbar_width`, and gives way to the rest of the bar: when other modules need the room (e.g. a
+media player module that only shows while music plays), the taskbar shrinks and scrolls instead of
+pushing those modules off screen. Set `max_taskbar_width` to your screen width to let the taskbar
+use all the free space.
+
+```jsonc
+{
+  "fill_available_width": true,
+  "max_taskbar_width": 1920
+}
+```
+
+Waybar's default `"fixed-center": true` caps each side of the bar at half its width, so a taskbar in
+`modules-left` or `modules-right` can't grow past the middle. Set `"fixed-center": false` in the bar
+config to let it use the full free space.
+
+`button_alignment` has no effect while this is enabled, since the taskbar has no spare width to
+align buttons in. It can also be set per output in `dimensions_per_output`.
 
 #### Per-Output Dimension Configuration
 
@@ -240,7 +264,7 @@ For more granular control, configure all button dimensions per output:
 }
 ```
 
-The top-level dimension settings are used as defaults. For each output, you can override any combination of `min_button_width`, `max_button_width`, and `max_taskbar_width`. Output names can be found using `niri msg outputs`.
+The top-level dimension settings are used as defaults. For each output, you can override any combination of `min_button_width`, `max_button_width`, `max_taskbar_width`, and `fill_available_width`. Output names can be found using `niri msg outputs`.
 
 #### Scroll Overflow Behavior
 
