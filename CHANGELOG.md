@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The taskbar no longer lags behind niri by seconds to half a minute when niri sends events that niri-ipc 26.4.0 lacks awareness of, such as `TouchpadToggled` from current niri-git: these events are now skipped rather than causing the event stream to terminate
+
 ## [0.4.7] - 2026-11-03
 
 ### Added

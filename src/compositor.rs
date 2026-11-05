@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
+    io,
     ops::Deref,
 };
 use niri_ipc::{Action, Event, Output, Reply, Request, Workspace, socket::Socket};
@@ -379,19 +380,13 @@ fn try_run_workspace_stream(tx: &async_channel::Sender<Vec<Workspace>>) -> Resul
     validate_handled(response)?;
 
     tracing::info!("workspace event stream connected");
-    let mut event_reader = socket.read_events();
-
-    loop {
-        match event_reader() {
-            Ok(Event::WorkspacesChanged { workspaces }) => {
-                tx.send_blocking(workspaces).map_err(|_| ModuleError::SnapshotChannelClosed)?;
-            }
-            Ok(_) => {}
-            Err(e) => {
-                return Err(ModuleError::CompositorIpc(e));
-            }
+    read_event_stream(socket.read_events(), |event| {
+        if let Event::WorkspacesChanged { workspaces } = event {
+            tx.send_blocking(workspaces)
+                .map_err(|_| ModuleError::SnapshotChannelClosed)?;
         }
-    }
+        Ok(())
+    })
 }
 
 fn run_window_stream(tx: &async_channel::Sender<WindowSnapshot>, filter_workspace: bool) -> Result<(), ModuleError> {
@@ -424,18 +419,36 @@ fn try_run_window_stream(
     validate_handled(response)?;
 
     tracing::info!("window event stream connected");
-    let mut event_reader = socket.read_events();
+    read_event_stream(socket.read_events(), |event| {
+        if let Some(snapshot) = window_state.process_event(event, filter_workspace) {
+            tx.send_blocking(snapshot)
+                .map_err(|_| ModuleError::SnapshotChannelClosed)?;
+        }
+        Ok(())
+    })
+}
 
+/// Hands each event from `next_event` to `handle_event` until `handle_event` fails or a
+/// read error ends the stream, then returns that error.
+///
+/// An event that niri-ipc cannot parse is skipped. Every other read error ends the stream,
+/// including the `UnexpectedEof` that `read_events` reports after niri has closed the
+/// socket, thereby prompting the caller to reconnect.
+fn read_event_stream(
+    mut next_event: impl FnMut() -> io::Result<Event>,
+    mut handle_event: impl FnMut(Event) -> Result<(), ModuleError>,
+) -> Result<(), ModuleError> {
     loop {
-        match event_reader() {
-            Ok(event) => {
-                if let Some(snapshot) = window_state.process_event(event, filter_workspace) {
-                    tx.send_blocking(snapshot).map_err(|_| ModuleError::SnapshotChannelClosed)?;
-                }
+        match next_event() {
+            Ok(event) => handle_event(event)?,
+            // niri adds new event variants over time and asks clients to handle unknown ones
+            // in a graceful manner. niri-ipc reports such a line as `InvalidData` solely after
+            // having read the entire line, ensuring the subsequent call commences with the
+            // next event.
+            Err(e) if e.kind() == io::ErrorKind::InvalidData => {
+                tracing::debug!(%e, "skipping event that niri-ipc cannot parse");
             }
-            Err(e) => {
-                return Err(ModuleError::CompositorIpc(e));
-            }
+            Err(e) => return Err(ModuleError::CompositorIpc(e)),
         }
     }
 }
@@ -759,5 +772,128 @@ impl Deref for WindowInfo {
 
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+
+    /// Delivers `script` one result at a time, just as `read_events` delivers what
+    /// niri writes. Requesting additional data triggers a panic, so a loop that continues
+    /// reading where it should have ceased causes the test to fail rather than resulting in
+    /// a hang.
+    fn scripted(script: Vec<io::Result<Event>>) -> impl FnMut() -> io::Result<Event> {
+        let mut script = VecDeque::from(script);
+        move || script.pop_front().expect("read past the end of the script")
+    }
+
+    /// Runs the read loop over `script` and returns its outcome alongside each event it
+    /// conveyed.
+    fn run(script: Vec<io::Result<Event>>) -> (Result<(), ModuleError>, Vec<Event>) {
+        let mut handled = Vec::new();
+        let result = read_event_stream(scripted(script), |event| {
+            handled.push(event);
+            Ok(())
+        });
+        (result, handled)
+    }
+
+    /// What `read_events` returns once niri has closed the socket. niri writes no line on
+    /// closing, thus `read_line` returns `Ok(0)` and leaves the buffer empty, while
+    /// serde_json reports "EOF while parsing a value at line 1 column 0" due to the empty
+    /// buffer.
+    fn end_of_stream() -> io::Error {
+        io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "EOF while parsing a value at line 1 column 0",
+        )
+    }
+
+    fn is_read_error(result: &Result<(), ModuleError>, kind: io::ErrorKind) -> bool {
+        matches!(result, Err(ModuleError::CompositorIpc(e)) if e.kind() == kind)
+    }
+
+    // Since niri commit 45739bc, each event stream starts with a burst containing
+    // `TouchpadToggled`, an event unknown to niri-ipc 26.4.0; the script repeats that burst
+    // as niri-git sends it. Ending the connection upon encountering the unknown event caused
+    // the taskbar to synchronize with niri only at each reconnect, with intervals ranging
+    // from seconds to half a minute.
+    #[test]
+    fn unknown_event_in_initial_burst_is_skipped() {
+        let (_, handled) = run(vec![
+            Ok(Event::WorkspacesChanged { workspaces: vec![] }),
+            Ok(Event::WindowsChanged { windows: vec![] }),
+            Ok(Event::KeyboardLayoutsChanged {
+                keyboard_layouts: niri_ipc::KeyboardLayouts {
+                    names: vec![],
+                    current_idx: 0,
+                },
+            }),
+            Ok(Event::OverviewOpenedOrClosed { is_open: false }),
+            Ok(Event::ConfigLoaded { failed: false }),
+            Ok(Event::CastsChanged { casts: vec![] }),
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unknown variant `TouchpadToggled`, expected one of `WorkspacesChanged`, ...",
+            )),
+            Ok(Event::WindowFocusChanged { id: Some(1) }),
+            Err(end_of_stream()),
+        ]);
+
+        assert!(
+            matches!(
+                handled.last(),
+                Some(Event::WindowFocusChanged { id: Some(1) })
+            ),
+            "handled: {handled:?}"
+        );
+    }
+
+    // Only `InvalidData` is known to leave the stream at the start of the next event.
+    // Following any other error, the socket's state becomes uncertain, prompting the
+    // connection to terminate and the reconnect loop to activate.
+    #[test]
+    fn other_read_error_ends_connection() {
+        let (result, _) = run(vec![Err(io::ErrorKind::ConnectionReset.into())]);
+
+        assert!(
+            is_read_error(&result, io::ErrorKind::ConnectionReset),
+            "{result:?}"
+        );
+    }
+
+    // The stream ends when niri drops an event-stream client that is reading too slowly,
+    // an action performed by `send_event` in niri's `src/ipc/server.rs` once more than
+    // `EVENT_STREAM_BUFFER_SIZE` (64) events have accumulated for that client. niri
+    // continues to operate and its socket remains available, so reconnecting works.
+    // Following termination, each subsequent call to `read_events` returns
+    // `UnexpectedEof`, so a loop that ignored this would persist in reading from the dead
+    // socket endlessly rather than reconnecting.
+    #[test]
+    fn end_of_stream_ends_connection() {
+        let (result, _) = run(vec![Err(end_of_stream())]);
+
+        assert!(
+            is_read_error(&result, io::ErrorKind::UnexpectedEof),
+            "{result:?}"
+        );
+    }
+
+    // When snapshots cease to be received, the handler fails with
+    // `SnapshotChannelClosed`. This must conclude the loop, ensuring the stream thread
+    // exits rather than attempting to read events from niri for nobody.
+    #[test]
+    fn handler_error_ends_connection() {
+        let result = read_event_stream(
+            scripted(vec![Ok(Event::WorkspacesChanged { workspaces: vec![] })]),
+            |_| Err(ModuleError::SnapshotChannelClosed),
+        );
+
+        assert!(
+            matches!(result, Err(ModuleError::SnapshotChannelClosed)),
+            "{result:?}"
+        );
     }
 }
