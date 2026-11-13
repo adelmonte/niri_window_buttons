@@ -360,12 +360,17 @@ fn run_workspace_stream(tx: &async_channel::Sender<Vec<Workspace>>) -> Result<()
     let mut backoff_secs = 1u64;
 
     loop {
+        let attempt_started = std::time::Instant::now();
         match try_run_workspace_stream(tx) {
             Ok(()) | Err(ModuleError::SnapshotChannelClosed) => {
                 tracing::info!("workspace event stream ended");
                 return Ok(());
             }
             Err(e) => {
+                // A connection that stayed up a while was healthy, so start the backoff over.
+                if attempt_started.elapsed().as_secs() >= MAX_BACKOFF_SECS {
+                    backoff_secs = 1;
+                }
                 tracing::warn!(%e, backoff_secs, "workspace event stream error, reconnecting");
                 std::thread::sleep(std::time::Duration::from_secs(backoff_secs));
                 backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
@@ -395,12 +400,17 @@ fn run_window_stream(tx: &async_channel::Sender<WindowSnapshot>, filter_workspac
     let mut window_state = WindowTracker::new();
 
     loop {
+        let attempt_started = std::time::Instant::now();
         match try_run_window_stream(tx, &mut window_state, filter_workspace) {
             Ok(()) | Err(ModuleError::SnapshotChannelClosed) => {
                 tracing::info!("window event stream ended");
                 return Ok(());
             }
             Err(e) => {
+                // A connection that stayed up a while was healthy, so start the backoff over.
+                if attempt_started.elapsed().as_secs() >= MAX_BACKOFF_SECS {
+                    backoff_secs = 1;
+                }
                 tracing::warn!(%e, backoff_secs, "window event stream error, reconnecting");
                 std::thread::sleep(std::time::Duration::from_secs(backoff_secs));
                 backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
