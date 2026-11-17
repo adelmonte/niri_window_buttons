@@ -455,14 +455,15 @@ impl ModuleInstance {
 
             loop {
                 if let Some(window) = process_map.lookup(process_id) {
+                    matched = true;
                     if !window.is_focused {
                         if let Some(button) = self.buttons.get(&window.id) {
-                            tracing::trace!(?button, ?window, process_id, 
+                            tracing::trace!(?button, ?window, process_id,
                                 "marking window as urgent via PID match");
                             button.mark_urgent();
-                            matched = true;
                         }
                     }
+                    break;
                 }
 
                 match ProcessInfo::query(process_id).await {
