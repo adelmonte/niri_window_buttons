@@ -308,7 +308,7 @@ impl CompositorClient {
     }
 }
 
-fn query_windows() -> Result<Vec<niri_ipc::Window>, ModuleError> {
+pub(crate) fn query_windows() -> Result<Vec<niri_ipc::Window>, ModuleError> {
     match send_request(Request::Windows)? {
         Ok(niri_ipc::Response::Windows(windows)) => Ok(windows),
         Ok(other) => Err(ModuleError::unexpected_response("Windows", other)),

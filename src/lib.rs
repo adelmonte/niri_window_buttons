@@ -24,7 +24,7 @@ mod system;
 mod widget;
 
 use audio::AudioState;
-use compositor::{WindowInfo, WindowSnapshot};
+use compositor::WindowSnapshot;
 use errors::ModuleError;
 use global::{EventMessage, SharedState};
 use notifications::NotificationData;
@@ -450,7 +450,11 @@ impl ModuleInstance {
         if let Some(mut process_id) = notification.get_process_id() {
             tracing::trace!(process_id, "attempting PID-based notification matching");
 
-            let process_map = ProcessWindowMap::build(windows.iter());
+            let all_windows = compositor::query_windows().unwrap_or_else(|e| {
+                tracing::warn!(%e, "window query failed, using filtered snapshot for PID matching");
+                windows.iter().map(|w| (**w).clone()).collect()
+            });
+            let process_map = ProcessWindowMap::build(all_windows.iter());
             let mut matched = false;
 
             loop {
@@ -802,10 +806,10 @@ impl ModuleInstance {
     }
 }
 
-struct ProcessWindowMap<'a>(HashMap<i64, &'a WindowInfo>);
+struct ProcessWindowMap<'a>(HashMap<i64, &'a niri_ipc::Window>);
 
 impl<'a> ProcessWindowMap<'a> {
-    fn build(windows: impl Iterator<Item = &'a WindowInfo>) -> Self {
+    fn build(windows: impl Iterator<Item = &'a niri_ipc::Window>) -> Self {
         Self(
             windows
                 .filter_map(|w| w.pid.map(|pid| (i64::from(pid), w)))
@@ -813,7 +817,7 @@ impl<'a> ProcessWindowMap<'a> {
         )
     }
 
-    fn lookup(&self, pid: i64) -> Option<&'a WindowInfo> {
+    fn lookup(&self, pid: i64) -> Option<&'a niri_ipc::Window> {
         self.0.get(&pid).copied()
     }
 }
